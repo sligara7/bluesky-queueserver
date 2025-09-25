@@ -1,28 +1,29 @@
 """
-Device Configuration Manager - Streamlined Version
+Device Configuration Utilities - OaaS Integration Support
 
-This module provides minimal device configuration management using 
-bluesky-queueserver's existing device discovery capabilities.
+This module provides additional device configuration export formats 
+and utilities that complement bluesky-queueserver's existing capabilities.
 """
 
 import json
-import yaml
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, asdict
-import logging
 
-try:
-    from ._defaults import default_user_group
-except ImportError:
-    default_user_group = "primary"
+# Use bluesky-queueserver's existing functionality
+from .profile_ops import (
+    load_profile_collection,
+    existing_plans_and_devices_from_nspace,
+    save_existing_plans_and_devices
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class DeviceDefinition:
-    """Standard device definition structure."""
+    """Standard device definition structure for external integrations."""
     name: str
     device_class: str
     device_type: str
@@ -39,18 +40,19 @@ class DeviceDefinition:
         return cls(**data)
 
 
-class DeviceConfigurationManager:
+class DeviceExportUtilities:
     """
-    Minimal device configuration manager using bluesky-queueserver's device discovery.
+    Device export utilities for external integrations (e.g., OaaS).
+    Uses bluesky-queueserver's existing device discovery capabilities.
     """
     
     def __init__(self):
-        """Initialize Device Configuration Manager."""
+        """Initialize Device Export Utilities."""
         self._device_definitions: Dict[str, DeviceDefinition] = {}
         
-    def load_from_profile_collection(self, profile_collection_dir: Union[str, Path]) -> Dict[str, DeviceDefinition]:
+    def load_devices_from_profile(self, profile_collection_dir: Union[str, Path]) -> Dict[str, DeviceDefinition]:
         """
-        Load device definitions using bluesky-queueserver's device discovery.
+        Load device definitions using bluesky-queueserver's existing functionality.
         
         Parameters
         ----------
@@ -66,162 +68,51 @@ class DeviceConfigurationManager:
         if not profile_path.exists():
             raise FileNotFoundError(f"Profile collection directory not found: {profile_path}")
             
-        logger.info(f"Loading devices via queue server from: {profile_path}")
+        logger.info(f"Loading devices using queue server discovery from: {profile_path}")
         
-        # Clear previous definitions
+        # Use bluesky-queueserver's existing device discovery
+        startup_path = profile_path / "startup" if (profile_path / "startup").exists() else profile_path
+        namespace = load_profile_collection(startup_path, patch_profiles=True, keep_re=False)
+        existing_plans, existing_devices, plans_in_nspace, devices_in_nspace = existing_plans_and_devices_from_nspace(
+            nspace=namespace, max_depth=0
+        )
+        
+        # Convert to DeviceDefinition format
         self._device_definitions.clear()
+        for name, device_info in existing_devices.items():
+            device_def = self._create_device_definition_from_existing(name, device_info)
+            if device_def:
+                self._device_definitions[name] = device_def
         
-        try:
-            from bluesky_queueserver.manager.profile_ops import load_profile_collection
-            
-            # Queue server expects the startup directory path
-            startup_path = profile_path / "startup" if (profile_path / "startup").exists() else profile_path
-            
-            # Load using queue server's proven logic
-            namespace = load_profile_collection(startup_path, patch_profiles=True, keep_re=False)
-            
-            # Extract devices from namespace
-            self._extract_devices_from_namespace(namespace)
-            
-            logger.info(f"Loaded {len(self._device_definitions)} devices via queue server")
-                    
-        except ImportError as e:
-            raise ImportError(f"bluesky-queueserver required but not available: {e}")
-            
-        except Exception as e:
-            raise RuntimeError(f"Error using queue server device discovery: {e}")
-        
+        logger.info(f"Loaded {len(self._device_definitions)} devices")
         return self._device_definitions.copy()
-
-    def _extract_devices_from_namespace(self, namespace: Dict[str, Any]):
-        """Extract device objects from the queue server namespace."""
-        
-        # Try ophyd devices first
-        ophyd_count = self._extract_ophyd_devices(namespace)
-        
-        # Then ophyd-async devices  
-        ophyd_async_count = self._extract_ophyd_async_devices(namespace)
-        
-        total = len(self._device_definitions)
-        logger.info(f"Found {total} devices ({ophyd_count} ophyd, {ophyd_async_count} ophyd-async)")
     
-    def _extract_ophyd_devices(self, namespace: Dict[str, Any]) -> int:
-        """Extract classic Ophyd devices."""
-        count = 0
+    def _create_device_definition_from_existing(self, name: str, device_info: Dict[str, Any]) -> Optional[DeviceDefinition]:
+        """Create DeviceDefinition from existing device info."""
         try:
-            import ophyd
-            from ophyd import Device
+            # Extract info from bluesky-queueserver's device format
+            classname = device_info.get('classname', 'Unknown')
+            module = device_info.get('module', 'unknown')
+            device_class = f"{module}.{classname}" if module != 'unknown' else classname
             
-            for name, obj in namespace.items():
-                if name.startswith('_') or name in self._device_definitions:
-                    continue
-                    
-                if isinstance(obj, Device):
-                    device_def = self._create_ophyd_definition(name, obj)
-                    if device_def:
-                        self._device_definitions[name] = device_def
-                        count += 1
-                        
-        except ImportError:
-            logger.debug("Classic Ophyd not available")
-            
-        return count
-    
-    def _extract_ophyd_async_devices(self, namespace: Dict[str, Any]) -> int:
-        """Extract ophyd-async devices."""
-        count = 0
-        try:
-            import ophyd_async.core
-            
-            for name, obj in namespace.items():
-                if name.startswith('_') or name in self._device_definitions:
-                    continue
-                    
-                if self._is_ophyd_async_device(obj):
-                    device_def = self._create_ophyd_async_definition(name, obj)
-                    if device_def:
-                        self._device_definitions[name] = device_def
-                        count += 1
-                        
-        except ImportError:
-            logger.debug("ophyd-async not available")
-            
-        return count
-    
-    def _create_ophyd_definition(self, name: str, device_obj) -> Optional[DeviceDefinition]:
-        """Create DeviceDefinition from Ophyd device."""
-        try:
-            import ophyd
-            
-            # Get basic info
-            device_class = f"{device_obj.__class__.__module__}.{device_obj.__class__.__name__}"
-            module = device_obj.__class__.__module__
-            
-            # Determine device type
-            if isinstance(device_obj, ophyd.Motor):
+            # Determine device type from classname
+            classname_lower = classname.lower()
+            if 'motor' in classname_lower:
                 device_type = 'motor'
-            elif isinstance(device_obj, ophyd.Detector):
+            elif 'detector' in classname_lower or 'camera' in classname_lower:
                 device_type = 'detector'
-            elif isinstance(device_obj, ophyd.Signal):
+            elif 'signal' in classname_lower:
                 device_type = 'signal'
-            else:
-                device_type = 'device'
-            
-            # Determine capabilities
-            capabilities = {
-                'readable': hasattr(device_obj, 'read'),
-                'movable': hasattr(device_obj, 'set') or isinstance(device_obj, ophyd.Motor),
-                'flyable': hasattr(device_obj, 'trigger') and hasattr(device_obj, 'stage')
-            }
-            
-            return DeviceDefinition(
-                name=name,
-                device_class=device_class,
-                device_type=device_type,
-                module=module,
-                capabilities=capabilities
-            )
-            
-        except Exception as e:
-            logger.warning(f"Failed to create definition for {name}: {e}")
-            return None
-    
-    def _is_ophyd_async_device(self, obj) -> bool:
-        """Check if object is an ophyd-async device."""
-        # Check for common ophyd-async interfaces
-        if hasattr(obj, 'read') and hasattr(obj, 'describe') and hasattr(obj, 'name'):
-            return callable(getattr(obj, 'read'))
-        if hasattr(obj, 'set') and hasattr(obj, 'read'):
-            return True
-        if hasattr(obj, 'prepare') and hasattr(obj, 'kickoff'):
-            return True
-        return False
-    
-    def _create_ophyd_async_definition(self, name: str, device_obj) -> Optional[DeviceDefinition]:
-        """Create DeviceDefinition from ophyd-async device."""
-        try:
-            # Get basic info
-            device_class = f"{device_obj.__class__.__module__}.{device_obj.__class__.__name__}"
-            module = device_obj.__class__.__module__
-            class_name = device_obj.__class__.__name__.lower()
-            
-            # Determine device type
-            if 'motor' in class_name:
-                device_type = 'motor'
-            elif 'detector' in class_name or 'camera' in class_name or 'panda' in class_name:
-                device_type = 'detector'
-            elif 'signal' in class_name:
-                device_type = 'signal'
-            elif 'flyer' in class_name:
+            elif 'flyer' in classname_lower:
                 device_type = 'flyer'
             else:
                 device_type = 'device'
             
-            # Determine capabilities
+            # Get capabilities from existing format
             capabilities = {
-                'readable': hasattr(device_obj, 'read') and hasattr(device_obj, 'describe'),
-                'movable': hasattr(device_obj, 'set'),
-                'flyable': hasattr(device_obj, 'prepare') and hasattr(device_obj, 'kickoff')
+                'readable': device_info.get('is_readable', False),
+                'movable': device_info.get('is_movable', False),
+                'flyable': device_info.get('is_flyable', False)
             }
             
             return DeviceDefinition(
@@ -236,36 +127,10 @@ class DeviceConfigurationManager:
             logger.warning(f"Failed to create definition for {name}: {e}")
             return None
     
-    def export_for_queueserver(self, output_path: Optional[str] = None) -> Dict[str, Any]:
+    def export_device_config(self, output_path: Optional[str] = None) -> Dict[str, Any]:
         """
-        Export in Queue Server format (existing_plans_and_devices.yaml format).
-        """
-        config = {
-            'existing_devices': {},
-            'existing_plans': {}
-        }
-        
-        for name, device_def in self._device_definitions.items():
-            classname = device_def.device_class.split('.')[-1] if device_def.device_class else 'Unknown'
-            
-            config['existing_devices'][name] = {
-                'classname': classname,
-                'module': device_def.module,
-                'is_flyable': device_def.capabilities.get('flyable', False),
-                'is_movable': device_def.capabilities.get('movable', False),
-                'is_readable': device_def.capabilities.get('readable', False)
-            }
-        
-        if output_path:
-            with open(output_path, 'w') as f:
-                f.write("# This file is automatically generated. Edit at your own risk.\n")
-                yaml.dump(config, f, default_flow_style=False)
-                
-        return config
-    
-    def export_for_oaas(self, output_path: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Export in OaaS format.
+        Export device definitions in JSON format for external integrations.
+        This is the unique functionality not available in base bluesky-queueserver.
         """
         config = {
             'devices': {},
@@ -300,11 +165,12 @@ class DeviceConfigurationManager:
         }
 
 
-def create_device_config(profile_collection_path: str, 
-                        output_dir: str,
-                        beamline_name: str = None) -> Dict[str, str]:
+def create_device_configs(profile_collection_path: str, 
+                         output_dir: str,
+                         beamline_name: str = None,
+                         export_oaas: bool = True) -> Dict[str, str]:
     """
-    Simple function to create device configuration files.
+    Create device configuration files using bluesky-queueserver's existing functionality.
     
     Parameters
     ----------
@@ -314,6 +180,8 @@ def create_device_config(profile_collection_path: str,
         Directory to save configuration files
     beamline_name : str, optional
         Beamline identifier for file naming
+    export_oaas : bool, optional
+        Whether to export OaaS format (default: True)
         
     Returns
     -------
@@ -323,21 +191,37 @@ def create_device_config(profile_collection_path: str,
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Load devices
-    manager = DeviceConfigurationManager()
-    devices = manager.load_from_profile_collection(profile_collection_path)
+    # Use bluesky-queueserver's existing functionality for the main export
+    startup_path = Path(profile_collection_path) / "startup" if (Path(profile_collection_path) / "startup").exists() else Path(profile_collection_path)
+    namespace = load_profile_collection(startup_path, patch_profiles=True, keep_re=False)
+    existing_plans, existing_devices, plans_in_nspace, devices_in_nspace = existing_plans_and_devices_from_nspace(
+        nspace=namespace, max_depth=0
+    )
     
     # Generate file names
     prefix = f"{beamline_name}_" if beamline_name else ""
     queueserver_config = output_path / f"{prefix}devices_queueserver.yaml"
-    oaas_config = output_path / f"{prefix}devices_oaas.json"
     
-    # Export configurations
-    manager.export_for_queueserver(str(queueserver_config))
-    manager.export_for_oaas(str(oaas_config))
+    # Use bluesky-queueserver's existing export
+    save_existing_plans_and_devices(
+        existing_plans=existing_plans,
+        existing_devices=existing_devices,
+        file_dir=str(output_path),
+        file_name=queueserver_config.name,
+        overwrite=True
+    )
     
-    return {
+    result = {
         'queueserver_config': str(queueserver_config),
-        'oaas_config': str(oaas_config),
-        'device_count': len(devices)
+        'device_count': len(existing_devices)
     }
+    
+    # Export device config format if requested (unique functionality)
+    if export_oaas:
+        utils = DeviceExportUtilities()
+        utils.load_devices_from_profile(profile_collection_path)
+        oaas_config = output_path / f"{prefix}devices_oaas.json"
+        utils.export_device_config(str(oaas_config))
+        result['oaas_config'] = str(oaas_config)
+    
+    return result

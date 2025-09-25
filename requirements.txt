@@ -9,6 +9,7 @@ ophyd
 packaging
 pydantic
 python-multipart
+fastapi
 pyyaml
 pyzmq
 redis[hiredis]
