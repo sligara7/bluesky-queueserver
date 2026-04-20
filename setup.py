@@ -8,7 +8,7 @@ import versioneer
 # NOTE: This file must remain Python 2 compatible for the foreseeable future,
 # to ensure that we error out properly for people with outdated setuptools
 # and/or pip.
-min_version = (3, 7)
+min_version = (3, 9)
 if sys.version_info < min_version:
     error = """
 bluesky-queueserver does not support Python {0}.{1}.
@@ -32,10 +32,8 @@ with open(path.join(here, "requirements.txt")) as requirements_file:
     # Parse requirements.txt, ignoring any commented-out lines.
     requirements = [line for line in requirements_file.read().splitlines() if line and not line.startswith("#")]
 
-# bluesky-httpserver lives as a git subtree at subprojects/bluesky-httpserver.
-# We register it as an additional top-level package so a single
-# `pip install bluesky-queueserver` installs both. setuptools requires
-# `package_dir` values to be relative, forward-slash paths — never absolute.
+# Register the bluesky-httpserver subtree as an additional top-level package.
+# setuptools requires `package_dir` values to be relative, forward-slash paths.
 httpserver_rel_root = "subprojects/bluesky-httpserver"
 httpserver_packages = find_packages(where=path.join(here, httpserver_rel_root), exclude=["docs", "tests", "tests.*"])
 httpserver_package_dir = {pkg: httpserver_rel_root + "/" + pkg.replace(".", "/") for pkg in httpserver_packages}

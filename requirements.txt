@@ -15,10 +15,13 @@ redis[hiredis]
 requests
 typing-extensions;python_version<'3.8'
 
-# bluesky-httpserver runtime deps (merged in via subprojects/bluesky-httpserver)
+# bluesky-httpserver runtime deps (merged in via subprojects/bluesky-httpserver).
+# httpx is imported unconditionally by bluesky_httpserver.authorization.api_access
+# but is missing from httpserver's own requirements.txt (upstream omission).
 alembic
 bluesky-queueserver-api
 fastapi
+httpx
 ldap3
 orjson
 pamela
