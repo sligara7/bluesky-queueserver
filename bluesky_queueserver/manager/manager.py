@@ -190,6 +190,79 @@ class RunEngineManager(Process):
         `args` and `kwargs` of the `multiprocessing.Process`
     """
 
+    _builtin_command_handlers = {
+        "ping": "_ping_handler",
+        "status": "_status_handler",
+        "config_get": "_config_get_handler",
+        "queue_get": "_queue_get_handler",
+        "plans_allowed": "_plans_allowed_handler",
+        "plans_existing": "_plans_existing_handler",
+        "devices_allowed": "_devices_allowed_handler",
+        "devices_existing": "_devices_existing_handler",
+        "permissions_reload": "_permissions_reload_handler",
+        "permissions_get": "_permissions_get_handler",
+        "permissions_set": "_permissions_set_handler",
+        "history_get": "_history_get_handler",
+        "history_clear": "_history_clear_handler",
+        "environment_open": "_environment_open_handler",
+        "environment_close": "_environment_close_handler",
+        "environment_destroy": "_environment_destroy_handler",
+        "environment_update": "_environment_update_handler",
+        "script_upload": "_script_upload_handler",
+        "function_execute": "_function_execute_handler",
+        "task_result": "_task_result_handler",
+        "task_status": "_task_status_handler",
+        "queue_mode_set": "_queue_mode_set_handler",
+        "queue_item_add": "_queue_item_add_handler",
+        "queue_item_add_batch": "_queue_item_add_batch_handler",
+        "queue_item_update": "_queue_item_update_handler",
+        "queue_item_get": "_queue_item_get_handler",
+        "queue_item_remove": "_queue_item_remove_handler",
+        "queue_item_remove_batch": "_queue_item_remove_batch_handler",
+        "queue_item_move": "_queue_item_move_handler",
+        "queue_item_move_batch": "_queue_item_move_batch_handler",
+        "queue_item_execute": "_queue_item_execute_handler",
+        "queue_clear": "_queue_clear_handler",
+        "queue_start": "_queue_start_handler",
+        "queue_stop": "_queue_stop_handler",
+        "queue_stop_cancel": "_queue_stop_cancel_handler",
+        "queue_autostart": "_queue_autostart_handler",
+        "kernel_interrupt": "_kernel_interrupt_handler",
+        "re_pause": "_re_pause_handler",
+        "re_resume": "_re_resume_handler",
+        "re_stop": "_re_stop_handler",
+        "re_abort": "_re_abort_handler",
+        "re_halt": "_re_halt_handler",
+        "re_runs": "_re_runs_handler",
+        "re_metadata": "_re_metadata_handler",
+        "lock": "_lock_handler",
+        "lock_info": "_lock_info_handler",
+        "unlock": "_unlock_handler",
+        "manager_stop": "_manager_stop_handler",
+        "manager_kill": "_manager_kill_handler",
+        "manager_test": "_manager_test_handler",
+    }
+
+    _command_handlers = {}
+
+    @classmethod
+    def register_command(cls, name):
+        """Register a 0MQ command handler.
+
+        The handler signature is ``async def handler(manager, params) -> dict``.
+        Registering an existing name replaces the prior handler.
+
+        Usage::
+
+            @RunEngineManager.register_command("my_command")
+            async def my_handler(manager, params):
+                return {"success": True, "msg": "ok"}
+        """
+        def decorator(func):
+            cls._command_handlers[name] = func
+            return func
+        return decorator
+
     def __init__(
         self,
         *args,
@@ -3695,59 +3768,6 @@ class RunEngineManager(Process):
         return {"success": success, "msg": msg}
 
     async def _zmq_execute(self, msg):
-        handler_dict = {
-            "ping": "_ping_handler",
-            "status": "_status_handler",
-            "config_get": "_config_get_handler",
-            "queue_get": "_queue_get_handler",
-            "plans_allowed": "_plans_allowed_handler",
-            "plans_existing": "_plans_existing_handler",
-            "devices_allowed": "_devices_allowed_handler",
-            "devices_existing": "_devices_existing_handler",
-            "permissions_reload": "_permissions_reload_handler",
-            "permissions_get": "_permissions_get_handler",
-            "permissions_set": "_permissions_set_handler",
-            "history_get": "_history_get_handler",
-            "history_clear": "_history_clear_handler",
-            "environment_open": "_environment_open_handler",
-            "environment_close": "_environment_close_handler",
-            "environment_destroy": "_environment_destroy_handler",
-            "environment_update": "_environment_update_handler",
-            "script_upload": "_script_upload_handler",
-            "function_execute": "_function_execute_handler",
-            "task_result": "_task_result_handler",
-            "task_status": "_task_status_handler",
-            "queue_mode_set": "_queue_mode_set_handler",
-            "queue_item_add": "_queue_item_add_handler",
-            "queue_item_add_batch": "_queue_item_add_batch_handler",
-            "queue_item_update": "_queue_item_update_handler",
-            "queue_item_get": "_queue_item_get_handler",
-            "queue_item_remove": "_queue_item_remove_handler",
-            "queue_item_remove_batch": "_queue_item_remove_batch_handler",
-            "queue_item_move": "_queue_item_move_handler",
-            "queue_item_move_batch": "_queue_item_move_batch_handler",
-            "queue_item_execute": "_queue_item_execute_handler",
-            "queue_clear": "_queue_clear_handler",
-            "queue_start": "_queue_start_handler",
-            "queue_stop": "_queue_stop_handler",
-            "queue_stop_cancel": "_queue_stop_cancel_handler",
-            "queue_autostart": "_queue_autostart_handler",
-            "kernel_interrupt": "_kernel_interrupt_handler",
-            "re_pause": "_re_pause_handler",
-            "re_resume": "_re_resume_handler",
-            "re_stop": "_re_stop_handler",
-            "re_abort": "_re_abort_handler",
-            "re_halt": "_re_halt_handler",
-            "re_runs": "_re_runs_handler",
-            "re_metadata": "_re_metadata_handler",
-            "lock": "_lock_handler",
-            "lock_info": "_lock_info_handler",
-            "unlock": "_unlock_handler",
-            "manager_stop": "_manager_stop_handler",
-            "manager_kill": "_manager_kill_handler",
-            "manager_test": "_manager_test_handler",
-        }
-
         try:
             if isinstance(msg, str):
                 raise Exception(f"Failed to decode the request: {msg}")
@@ -3764,9 +3784,8 @@ class RunEngineManager(Process):
             method = msg["method"]  # Required
             params = msg.get("params", {})  # Optional
 
-            handler_name = handler_dict[method]
-            handler = getattr(self, handler_name)
-            result = await handler(params)
+            handler = self._command_handlers[method]
+            result = await handler(self, params)
         except KeyError:
             result = {"success": False, "msg": f"Unknown method {method!r}"}
         except AttributeError:
@@ -4038,3 +4057,15 @@ class RunEngineManager(Process):
             # TODO: RE Manager must be orderly closed before Watchdog module is stopped.
             #   Right now it is just killed by SIGINT.
             logger.info("RE Manager Process was stopped by SIGINT. Handling of Ctrl-C has to be revised!!!")
+
+
+def _make_builtin_command_shim(attr_name):
+    async def _shim(manager, params):
+        return await getattr(manager, attr_name)(params)
+
+    _shim.__name__ = f"_builtin_shim_{attr_name}"
+    return _shim
+
+
+for _cmd, _attr in RunEngineManager._builtin_command_handlers.items():
+    RunEngineManager._command_handlers[_cmd] = _make_builtin_command_shim(_attr)
