@@ -14,5 +14,14 @@ include bluesky_queueserver/_version.py
 include bluesky_queueserver/manager/config_schemas/*.yml
 recursive-include bluesky_queueserver/profile_collection_sim/ *
 
+# bluesky-httpserver subtree (installed as `bluesky_httpserver` from
+# subprojects/bluesky-httpserver/; see setup.py for the package_dir mapping).
+include subprojects/bluesky-httpserver/bluesky_httpserver/_version.py
+include subprojects/bluesky-httpserver/bluesky_httpserver/config_schemas/*.yml
+include subprojects/bluesky-httpserver/bluesky_httpserver/database/alembic.ini.template
+include subprojects/bluesky-httpserver/bluesky_httpserver/database/migrations/env.py
+include subprojects/bluesky-httpserver/bluesky_httpserver/database/migrations/script.py.mako
+recursive-include subprojects/bluesky-httpserver/bluesky_httpserver/database/migrations/versions *.py
+
 # If including data files in the package, add them like:
 # include path/to/data_file

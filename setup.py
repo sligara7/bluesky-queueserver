@@ -30,7 +30,15 @@ with open(path.join(here, "README.rst"), encoding="utf-8") as readme_file:
 
 with open(path.join(here, "requirements.txt")) as requirements_file:
     # Parse requirements.txt, ignoring any commented-out lines.
-    requirements = [line for line in requirements_file.read().splitlines() if not line.startswith("#")]
+    requirements = [line for line in requirements_file.read().splitlines() if line and not line.startswith("#")]
+
+# bluesky-httpserver lives as a git subtree at subprojects/bluesky-httpserver.
+# We register it as an additional top-level package so a single
+# `pip install bluesky-queueserver` installs both. setuptools requires
+# `package_dir` values to be relative, forward-slash paths — never absolute.
+httpserver_rel_root = "subprojects/bluesky-httpserver"
+httpserver_packages = find_packages(where=path.join(here, httpserver_rel_root), exclude=["docs", "tests", "tests.*"])
+httpserver_package_dir = {pkg: httpserver_rel_root + "/" + pkg.replace(".", "/") for pkg in httpserver_packages}
 
 setup(
     name="bluesky-queueserver",
@@ -42,7 +50,8 @@ setup(
     author_email="",
     url="https://github.com/bluesky/bluesky-queueserver",
     python_requires=">={}".format(".".join(str(n) for n in min_version)),
-    packages=find_packages(exclude=["docs", "tests"]),
+    packages=find_packages(exclude=["docs", "tests"]) + httpserver_packages,
+    package_dir=httpserver_package_dir,
     entry_points={
         "console_scripts": [
             "qserver = bluesky_queueserver.manager.qserver_cli:qserver",
@@ -54,6 +63,7 @@ setup(
             "qserver-console = bluesky_queueserver.manager.qserver_cli:qserver_console",
             "qserver-qtconsole = bluesky_queueserver.manager.qserver_cli:qserver_qtconsole",
             "qserver-console-monitor = bluesky_queueserver.manager.output_streaming:qserver_console_monitor_cli",
+            "start-bluesky-httpserver = bluesky_httpserver.server:start_server",
         ],
     },
     include_package_data=True,
@@ -63,7 +73,14 @@ setup(
             # When adding files here, remember to update MANIFEST.in as well,
             # or else they will not be included in the distribution on PyPI!
             # 'path/to/data_file',
-        ]
+        ],
+        "bluesky_httpserver": [
+            "config_schemas/*.yml",
+            "database/alembic.ini.template",
+            "database/migrations/env.py",
+            "database/migrations/script.py.mako",
+            "database/migrations/versions/*.py",
+        ],
     },
     install_requires=requirements,
     license="BSD (3-clause)",

@@ -14,3 +14,16 @@ pyzmq
 redis[hiredis]
 requests
 typing-extensions;python_version<'3.8'
+
+# bluesky-httpserver runtime deps (merged in via subprojects/bluesky-httpserver)
+alembic
+bluesky-queueserver-api
+fastapi
+ldap3
+orjson
+pamela
+pydantic-settings
+python-jose
+sqlalchemy
+starlette
+uvicorn
