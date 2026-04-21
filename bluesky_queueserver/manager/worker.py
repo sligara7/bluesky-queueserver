@@ -157,6 +157,7 @@ class RunEngineWorker(Process):
         self._config_dict = config or {}
         self._existing_plans_and_devices_changed = False
         self._existing_plans, self._existing_devices = {}, {}
+        self._config_service_device_data: dict = {}
         self._allowed_plans, self._allowed_devices = {}, {}
 
         self._allowed_items_lock = None  # threading.Lock()
@@ -844,8 +845,11 @@ class RunEngineWorker(Process):
 
             if self._existing_plans_and_devices_changed:
                 # Descriptions of existing plans and devices
+                from .device_introspection import build_config_service_payload
+
                 with self._existing_items_lock:
                     self._existing_plans, self._existing_devices = existing_plans, existing_devices
+                    self._config_service_device_data = build_config_service_payload(devices_in_nspace)
                 self._generate_lists_of_allowed_plans_and_devices()
                 self._update_existing_pd_file(options=("ALWAYS",))
 
@@ -971,10 +975,12 @@ class RunEngineWorker(Process):
         """
         with self._existing_items_lock:
             existing_plans, existing_devices = self._existing_plans, self._existing_devices
+            config_service_device_data = self._config_service_device_data
         msg_out = {
             "existing_plans": existing_plans,
             "existing_devices": existing_devices,
             "user_group_permissions": self._user_group_permissions,
+            "config_service_device_data": config_service_device_data,
         }
         self._existing_plans_and_devices_changed = False
         return msg_out
@@ -1432,8 +1438,11 @@ class RunEngineWorker(Process):
             # )
 
             # Descriptions of existing plans and devices
+            from .device_introspection import build_config_service_payload
+
             with self._existing_items_lock:
                 self._existing_plans, self._existing_devices = existing_plans, existing_devices
+                self._config_service_device_data = build_config_service_payload(devices_in_nspace)
 
             # Dictionaries of references to plans and devices from the namespace
             self._plans_in_nspace = plans_in_nspace

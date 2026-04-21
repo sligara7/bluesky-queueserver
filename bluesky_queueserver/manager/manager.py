@@ -372,6 +372,7 @@ class RunEngineManager(Process):
         self._config_dict = config or {}
         self._user_group_permissions = {}
         self._existing_plans, self._existing_devices = {}, {}
+        self._config_service_device_data: dict = {}
         self._existing_plans_uid = _generate_uid()
         self._existing_devices_uid = _generate_uid()
         self._allowed_plans, self._allowed_devices = {}, {}
@@ -1016,6 +1017,9 @@ class RunEngineManager(Process):
             self._set_existing_plans_and_devices(
                 existing_plans=plan_and_devices_list["existing_plans"],
                 existing_devices=plan_and_devices_list["existing_devices"],
+            )
+            self._config_service_device_data = plan_and_devices_list.get(
+                "config_service_device_data", {}
             )
 
             try:
