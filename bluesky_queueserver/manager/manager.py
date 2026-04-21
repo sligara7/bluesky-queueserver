@@ -390,6 +390,13 @@ class RunEngineManager(Process):
         # known-empty ``{}`` case — so a disabled/errored prefetch does not
         # make the post-spawn sync skip its emptiness probe.
         self._config_service_prefetched_info = None
+        # Long-lived ConfigServiceClient shared across prefetch / env-open
+        # sync / staleness check / unlock. Lazy-init via
+        # ``_get_config_service_client`` because httpx.AsyncClient binds to
+        # the event loop at construction time and ``__init__`` runs in the
+        # parent Process before the manager's loop starts. Closed in the
+        # shutdown path of ``zmq_server_comm``.
+        self._config_service_client = None
         self._existing_plans_uid = _generate_uid()
         self._existing_devices_uid = _generate_uid()
         self._allowed_plans, self._allowed_devices = {}, {}
@@ -609,6 +616,25 @@ class RunEngineManager(Process):
 
         return accepted, msg
 
+    async def _get_config_service_client(self):
+        """Return the manager's long-lived ConfigServiceClient.
+
+        Lazy-initialized on first call so ``httpx.AsyncClient`` binds to the
+        manager's event loop (not the parent Process's). All config-service
+        call sites (prefetch, env-open sync, staleness check, unlock) share
+        this one client so httpx keep-alive / TLS session reuse amortize
+        across the manager's lifetime. Callers must gate on
+        ``self._config_service_settings.enabled`` (ConfigServiceClient's
+        constructor rejects disabled settings on purpose).
+        """
+        if self._config_service_client is None:
+            from .config_service import ConfigServiceClient
+
+            self._config_service_client = ConfigServiceClient(
+                self._config_service_settings
+            )
+        return self._config_service_client
+
     async def _prefetch_config_service_registry(self) -> dict:
         """Fetch the config-service registry before spawning the worker.
 
@@ -624,10 +650,8 @@ class RunEngineManager(Process):
         if not self._config_service_settings.enabled:
             return {}
 
-        from .config_service import ConfigServiceClient
-
-        async with ConfigServiceClient(self._config_service_settings) as client:
-            specs = await client.get_instantiation_specs()
+        client = await self._get_config_service_client()
+        specs = await client.get_instantiation_specs()
         self._config_service_prefetched_info = specs
         if not specs:
             return {}
@@ -1099,27 +1123,27 @@ class RunEngineManager(Process):
         Errors propagate to the caller so env-open fails loudly when
         config-service is enabled but something went wrong.
         """
-        from .config_service import ConfigServiceClient, sync_devices_on_env_open
+        from .config_service import sync_devices_on_env_open
 
         device_names = list(self._existing_devices.keys())
-        async with ConfigServiceClient(self._config_service_settings) as client:
-            state = await sync_devices_on_env_open(
-                client,
-                expected_device_names=device_names,
-                device_data=self._config_service_device_data,
-                prefetched_info=self._config_service_prefetched_info,
+        client = await self._get_config_service_client()
+        state = await sync_devices_on_env_open(
+            client,
+            expected_device_names=device_names,
+            device_data=self._config_service_device_data,
+            prefetched_info=self._config_service_prefetched_info,
+        )
+        if not self._config_service_locked_devices and device_names:
+            await client.lock_devices(
+                device_names,
+                item_id=self._config_service_lock_item_id,
+                plan_name="__environment__",
             )
-            if not self._config_service_locked_devices and device_names:
-                await client.lock_devices(
-                    device_names,
-                    item_id=self._config_service_lock_item_id,
-                    plan_name="__environment__",
-                )
-                self._config_service_locked_devices = list(device_names)
-                logger.info(
-                    "config-service locked %d device(s) under item_id=%s",
-                    len(device_names), self._config_service_lock_item_id,
-                )
+            self._config_service_locked_devices = list(device_names)
+            logger.info(
+                "config-service locked %d device(s) under item_id=%s",
+                len(device_names), self._config_service_lock_item_id,
+            )
         self._config_service_state = state
         logger.info(
             "config-service cursor=%d epoch=%s", state.cursor, state.epoch
@@ -1142,10 +1166,10 @@ class RunEngineManager(Process):
         if not self._config_service_settings.enabled:
             return
 
-        from .config_service import ConfigServiceClient, fetch_staleness_plan
+        from .config_service import fetch_staleness_plan
 
-        async with ConfigServiceClient(self._config_service_settings) as client:
-            plan = await fetch_staleness_plan(client, self._config_service_state)
+        client = await self._get_config_service_client()
+        plan = await fetch_staleness_plan(client, self._config_service_state)
 
         if plan.is_noop:
             return
@@ -1180,13 +1204,11 @@ class RunEngineManager(Process):
         if not devices:
             return
 
-        from .config_service import ConfigServiceClient
-
         try:
-            async with ConfigServiceClient(self._config_service_settings) as client:
-                await client.unlock_devices(
-                    devices, item_id=self._config_service_lock_item_id
-                )
+            client = await self._get_config_service_client()
+            await client.unlock_devices(
+                devices, item_id=self._config_service_lock_item_id
+            )
         except Exception:
             if not suppress_errors:
                 raise
@@ -4237,6 +4259,9 @@ class RunEngineManager(Process):
                 self._comm_to_watchdog.stop()
                 self._comm_to_worker.stop()
                 await self._plan_queue.stop()
+                if self._config_service_client is not None:
+                    await self._config_service_client.aclose()
+                    self._config_service_client = None
                 self._zmq_socket.close()
                 logger.info("RE Manager was stopped by ZMQ command.")
                 break

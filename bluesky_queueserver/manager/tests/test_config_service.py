@@ -699,6 +699,29 @@ def test_overlay_handler_full_replace_drops_stale_overlay_but_keeps_profile_devi
     assert stub._config_service_overlay_names == {"m1", "m3"}
 
 
+@pytest.mark.asyncio
+async def test_manager_helper_returns_same_client_across_calls():
+    # The long-lived ConfigServiceClient refactor relies on the manager's
+    # lazy-init helper returning the SAME client on every call, so httpx
+    # keep-alive actually amortizes across prefetch/sync/staleness/unlock.
+    # Regression guard: a future maintainer who instead writes
+    # `ConfigServiceClient(self._settings)` here would silently defeat the
+    # whole optimization.
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    class _Stub:
+        _config_service_settings = _settings()
+        _config_service_client = None
+
+    stub = _Stub()
+    c1 = await RunEngineManager._get_config_service_client(stub)
+    c2 = await RunEngineManager._get_config_service_client(stub)
+    try:
+        assert c1 is c2
+    finally:
+        await c1.aclose()
+
+
 def test_overlay_handler_incremental_respects_explicit_deletes_only():
     namespace = {
         "profile_only": "profile_instance",
