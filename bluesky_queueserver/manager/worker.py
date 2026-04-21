@@ -1204,6 +1204,46 @@ class RunEngineWorker(Process):
         msg_out = {"status": status, "err_msg": err_msg}
         return msg_out
 
+    def _command_update_device_overlay_handler(self, *, upserts, deletes):
+        """Apply an overlay diff to the RE namespace (Layer 2.7 staleness check).
+
+        ``upserts`` — ``{name: DeviceInstantiationSpec}`` dict; each spec is
+        instantiated via the existing Layer 2.6 helper and replaces any
+        same-named device in the namespace. ``deletes`` — list of names
+        removed entirely (matches the consume-mode policy: config-service is
+        authoritative, including for removals). Rejected unless the Run
+        Engine is idle. Hard-fail on any instantiation error — no silent
+        fallback to the previous overlay.
+        """
+        if self.re_state not in ("idle", None):
+            return {
+                "status": "rejected",
+                "err_msg": (
+                    f"Run Engine must be in 'idle' state to update device overlay. "
+                    f"The state is {self.re_state!r}"
+                ),
+            }
+        if self._re_namespace is None:
+            return {
+                "status": "rejected",
+                "err_msg": "RE namespace is not initialized",
+            }
+        try:
+            for name, spec in upserts.items():
+                self._re_namespace[name] = instantiate_device_from_spec(spec)
+            for name in deletes:
+                self._re_namespace.pop(name, None)
+        except Exception as ex:  # noqa: BLE001
+            logger.exception("config-service overlay update failed")
+            return {"status": "rejected", "err_msg": str(ex)}
+
+        logger.info(
+            "config-service overlay updated: %d upsert(s), %d delete(s)",
+            len(upserts),
+            len(deletes),
+        )
+        return {"status": "accepted", "err_msg": ""}
+
     def _command_permissions_reload_handler(self, user_group_permissions):
         """
         Initiate reloading of permissions and computing new lists of existing plans and devices.
@@ -1372,6 +1412,9 @@ class RunEngineWorker(Process):
         self._comm_to_manager.add_method(self._command_continue_plan_handler, "command_continue_plan")
         self._comm_to_manager.add_method(self._command_reset_worker_handler, "command_reset_worker")
         self._comm_to_manager.add_method(self._command_permissions_reload_handler, "command_permissions_reload")
+        self._comm_to_manager.add_method(
+            self._command_update_device_overlay_handler, "command_update_device_overlay"
+        )
 
         self._comm_to_manager.add_method(self._command_reserve_kernel_handler, "command_reserve_kernel")
         self._comm_to_manager.add_method(self._command_exec_loop_stop_handler, "command_exec_loop_stop")

@@ -1124,6 +1124,46 @@ class RunEngineManager(Process):
             "config-service cursor=%d epoch=%s", state.cursor, state.epoch
         )
 
+    async def _check_staleness_before_plan(self) -> None:
+        """Layer 2.7 pre-plan staleness check.
+
+        No-op when config-service is disabled, keeping legacy deployments
+        byte-identical to today. When enabled, calls /devices/changes with
+        the saved cursor; on reset_occurred or service_epoch mismatch,
+        fetches the full /devices/instantiation registry; applies the
+        resulting upserts + deletes to the worker's overlay via the new
+        ``command_update_device_overlay`` RPC; commits the advanced cursor.
+
+        Raises if config-service is unreachable or the worker rejects the
+        overlay update — plan start aborts loudly per the no-silent-fallback
+        rule (see feedback_backwards_compat).
+        """
+        if not self._config_service_settings.enabled:
+            return
+
+        from .config_service import ConfigServiceClient, fetch_staleness_plan
+
+        async with ConfigServiceClient(self._config_service_settings) as client:
+            plan = await fetch_staleness_plan(client, self._config_service_state)
+
+        if plan.mode == "noop":
+            return
+
+        logger.info(
+            "config-service staleness check: mode=%s upserts=%d deletes=%d",
+            plan.mode,
+            len(plan.upserts),
+            len(plan.deletes),
+        )
+        success, err_msg = await self._worker_command_update_device_overlay(
+            plan.upserts, plan.deletes
+        )
+        if not success:
+            raise RuntimeError(
+                f"config-service overlay update rejected by worker: {err_msg}"
+            )
+        self._config_service_state = plan.new_state
+
     async def _unlock_config_service_devices(self, *, suppress_errors: bool = False) -> None:
         """Release any lock this manager holds in config-service.
 
@@ -1310,6 +1350,18 @@ class RunEngineManager(Process):
 
             # The next items is PLAN
             if next_item["item_type"] == "plan":
+                # Pre-plan staleness check — no-op when config-service is
+                # disabled. On failure the queue item stays put, matching the
+                # reset-failure path below.
+                try:
+                    await self._check_staleness_before_plan()
+                except Exception as ex:  # noqa: BLE001
+                    self._manager_state = MState.IDLE
+                    err_msg = f"config-service staleness check failed: {ex}"
+                    logger.error(err_msg)
+                    self._status_update()
+                    return False, err_msg
+
                 # Reset RE environment (worker)
                 success, err_msg = await self._worker_command_reset_worker()
                 if not success:
@@ -1868,6 +1920,18 @@ class RunEngineManager(Process):
             tt = self._comm_to_worker_timeout_long
             response = await self._comm_to_worker.send_msg(
                 "command_run_plan", {"plan_info": plan_info}, timeout=tt
+            )
+            success = response["status"] == "accepted"
+            err_msg = response["err_msg"]
+        except CommTimeoutError:
+            success, err_msg = None, "Timeout occurred while processing the request"
+        return success, err_msg
+
+    async def _worker_command_update_device_overlay(self, upserts, deletes):
+        try:
+            response = await self._comm_to_worker.send_msg(
+                "command_update_device_overlay",
+                {"upserts": upserts, "deletes": deletes},
             )
             success = response["status"] == "accepted"
             err_msg = response["err_msg"]

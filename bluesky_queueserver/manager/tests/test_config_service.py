@@ -24,6 +24,8 @@ from bluesky_queueserver.manager.config_service import (
     ConfigServiceSettings,
     ConfigServiceState,
     ConfigServiceUnreachable,
+    build_staleness_plan,
+    fetch_staleness_plan,
     sync_devices_on_env_open,
 )
 
@@ -500,4 +502,138 @@ async def test_sync_with_prefetched_info_populated_skips_bootstrap_and_probe():
     assert state == ConfigServiceState(cursor=9, epoch="2026-04")
     assert [c.method for c in responder.calls] == ["GET"]
     assert responder.calls[0].url.path == "/api/v1/devices/changes"
+
+
+# ===== Layer 2.7: pre-plan staleness plan =====
+
+
+def _changes_response(
+    *, current_version: int, service_epoch: str, reset_occurred: bool = False, changes=None
+):
+    return {
+        "current_version": current_version,
+        "service_epoch": service_epoch,
+        "reset_occurred": reset_occurred,
+        "changes": list(changes or []),
+    }
+
+
+def _upsert(name: str, *, prefix: str = "XF:M1") -> dict:
+    return {
+        "device_name": name,
+        "op": "upsert",
+        "version": 7,
+        "spec": {
+            "name": name,
+            "device_class": "ophyd.EpicsMotor",
+            "args": [prefix],
+            "kwargs": {"name": name},
+            "active": True,
+        },
+    }
+
+
+def _delete(name: str) -> dict:
+    return {"device_name": name, "op": "delete", "version": 8}
+
+
+def test_build_staleness_plan_noop_when_no_changes():
+    response = _changes_response(current_version=5, service_epoch="e1")
+    plan = build_staleness_plan(response, saved_epoch="e1")
+    assert plan.mode == "noop"
+    assert plan.upserts == {}
+    assert plan.deletes == []
+    assert plan.new_state == ConfigServiceState(cursor=5, epoch="e1")
+
+
+def test_build_staleness_plan_incremental_upsert_and_delete():
+    response = _changes_response(
+        current_version=9,
+        service_epoch="e1",
+        changes=[_upsert("m1"), _upsert("m2"), _delete("m3")],
+    )
+    plan = build_staleness_plan(response, saved_epoch="e1")
+    assert plan.mode == "incremental"
+    assert set(plan.upserts) == {"m1", "m2"}
+    assert plan.upserts["m1"]["device_class"] == "ophyd.EpicsMotor"
+    assert plan.deletes == ["m3"]
+    assert plan.new_state.cursor == 9
+
+
+def test_build_staleness_plan_full_on_reset_occurred():
+    response = _changes_response(
+        current_version=9, service_epoch="e1", reset_occurred=True, changes=[_upsert("m1")]
+    )
+    plan = build_staleness_plan(response, saved_epoch="e1")
+    # reset means "discard local state"; upserts from the changes list are
+    # irrelevant — the fetch step populates the full registry.
+    assert plan.mode == "full"
+    assert plan.upserts == {}
+    assert plan.deletes == []
+
+
+def test_build_staleness_plan_full_on_epoch_mismatch():
+    response = _changes_response(
+        current_version=9, service_epoch="e2", changes=[_upsert("m1")]
+    )
+    plan = build_staleness_plan(response, saved_epoch="e1")
+    assert plan.mode == "full"
+    assert plan.new_state.epoch == "e2"
+
+
+def test_build_staleness_plan_rejects_upsert_without_spec():
+    bad_change = {"device_name": "m1", "op": "upsert", "version": 1}  # spec missing
+    response = _changes_response(current_version=5, service_epoch="e1", changes=[bad_change])
+    with pytest.raises(ConfigServiceProtocolError, match="missing 'spec'"):
+        build_staleness_plan(response, saved_epoch="e1")
+
+
+def test_build_staleness_plan_rejects_unknown_op():
+    bad_change = {"device_name": "m1", "op": "patch", "version": 1}
+    response = _changes_response(current_version=5, service_epoch="e1", changes=[bad_change])
+    with pytest.raises(ConfigServiceProtocolError, match="unknown change op"):
+        build_staleness_plan(response, saved_epoch="e1")
+
+
+@pytest.mark.asyncio
+async def test_fetch_staleness_plan_incremental_hits_only_changes():
+    changes = _changes_response(
+        current_version=11, service_epoch="e1", changes=[_upsert("m1")]
+    )
+    client, responder = await _aclient([_json_response(200, changes)])
+    async with client:
+        plan = await fetch_staleness_plan(client, ConfigServiceState(cursor=5, epoch="e1"))
+    assert plan.mode == "incremental"
+    assert set(plan.upserts) == {"m1"}
+    paths = [c.url.path for c in responder.calls]
+    assert paths == ["/api/v1/devices/changes"]
+    # cursor was forwarded as since_version
+    assert responder.calls[0].url.params["since_version"] == "5"
+
+
+@pytest.mark.asyncio
+async def test_fetch_staleness_plan_full_also_fetches_instantiation_specs():
+    changes = _changes_response(
+        current_version=20, service_epoch="e2", reset_occurred=True
+    )
+    full_specs = {"m1": _upsert("m1")["spec"], "m2": _upsert("m2")["spec"]}
+    handlers = [_json_response(200, changes), _json_response(200, full_specs)]
+    client, responder = await _aclient(handlers)
+    async with client:
+        plan = await fetch_staleness_plan(client, ConfigServiceState(cursor=3, epoch="e1"))
+    assert plan.mode == "full"
+    assert set(plan.upserts) == {"m1", "m2"}
+    paths = [c.url.path for c in responder.calls]
+    assert paths == ["/api/v1/devices/changes", "/api/v1/devices/instantiation"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_staleness_plan_noop_only_hits_changes_endpoint():
+    changes = _changes_response(current_version=7, service_epoch="e1")
+    client, responder = await _aclient([_json_response(200, changes)])
+    async with client:
+        plan = await fetch_staleness_plan(client, ConfigServiceState(cursor=7, epoch="e1"))
+    assert plan.mode == "noop"
+    # No /devices/instantiation call, no side-effects beyond the /changes probe.
+    assert [c.url.path for c in responder.calls] == ["/api/v1/devices/changes"]
 

@@ -410,3 +410,83 @@ async def sync_devices_on_env_open(
         cursor=int(changes["current_version"]),
         epoch=str(changes["service_epoch"]),
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class StalenessPlan:
+    """Actionable result of a pre-plan staleness check.
+
+    ``mode`` is ``"noop"`` (no changes since cursor), ``"incremental"`` (apply
+    the diff), or ``"full"`` (discard local overlay; replace with ``upserts``
+    which the fetch step populated from /devices/instantiation). ``upserts``
+    is keyed by device name → spec dict. ``deletes`` is the list of names
+    removed since the cursor. ``new_state`` is the cursor+epoch to commit
+    after the plan is applied.
+    """
+
+    mode: str
+    upserts: Dict[str, Dict[str, Any]]
+    deletes: List[str]
+    new_state: ConfigServiceState
+
+
+def build_staleness_plan(
+    response: Dict[str, Any], saved_epoch: str
+) -> StalenessPlan:
+    """Turn a /devices/changes response into an overlay-update plan.
+
+    Pure function; the async ``fetch_staleness_plan`` wraps it with the
+    full-refetch HTTP call when ``mode == "full"``.
+    """
+    new_state = ConfigServiceState(
+        cursor=int(response["current_version"]),
+        epoch=str(response["service_epoch"]),
+    )
+    if response["reset_occurred"] or response["service_epoch"] != saved_epoch:
+        return StalenessPlan(
+            mode="full", upserts={}, deletes=[], new_state=new_state
+        )
+
+    changes = response["changes"]
+    if not changes:
+        return StalenessPlan(
+            mode="noop", upserts={}, deletes=[], new_state=new_state
+        )
+
+    upserts: Dict[str, Dict[str, Any]] = {}
+    deletes: List[str] = []
+    for change in changes:
+        name = change["device_name"]
+        op = change["op"]
+        if op == "upsert":
+            spec = change.get("spec")
+            if spec is None:
+                raise ConfigServiceProtocolError(
+                    f"upsert change for {name!r} is missing 'spec'"
+                )
+            upserts[name] = spec
+        elif op == "delete":
+            deletes.append(name)
+        else:
+            raise ConfigServiceProtocolError(
+                f"unknown change op {op!r} for device {name!r}"
+            )
+
+    return StalenessPlan(
+        mode="incremental", upserts=upserts, deletes=deletes, new_state=new_state
+    )
+
+
+async def fetch_staleness_plan(
+    client: ConfigServiceClient,
+    state: ConfigServiceState,
+) -> StalenessPlan:
+    """Call /devices/changes; on epoch-mismatch or registry reset also fetch
+    /devices/instantiation so the caller can apply a single atomic overlay
+    replacement without a second round-trip."""
+    response = await client.get_changes_since(state.cursor)
+    plan = build_staleness_plan(response, state.epoch)
+    if plan.mode == "full":
+        specs = await client.get_instantiation_specs()
+        plan = dataclasses.replace(plan, upserts=specs)
+    return plan
