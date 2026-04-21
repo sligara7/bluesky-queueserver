@@ -860,6 +860,8 @@ def start_manager():
 
     config_manager["lock_key_emergency"] = settings.emergency_lock_key
 
+    config_manager["config_service"] = settings.config_service
+
     wp = WatchdogProcess(
         config_worker=config_worker, config_manager=config_manager, msg_queue=msg_queue, log_level=log_level
     )

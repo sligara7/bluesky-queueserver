@@ -17,11 +17,13 @@ import pytest
 from bluesky_queueserver.manager.config_service import (
     ConfigServiceClient,
     ConfigServiceConflict,
+    ConfigServiceError,
     ConfigServiceHTTPError,
     ConfigServiceNotFound,
     ConfigServiceProtocolError,
     ConfigServiceSettings,
     ConfigServiceUnreachable,
+    sync_devices_on_env_open,
 )
 
 
@@ -321,5 +323,106 @@ async def test_backoff_schedule_uses_last_entry_for_extra_attempts():
         with pytest.raises(ConfigServiceUnreachable):
             await client.get_devices_info()
     assert len(responder.calls) == 5
+
+
+# ===== sync_devices_on_env_open =====
+
+
+def _device_payload(name: str, prefix: str = "XF:01-Mtr{M1}") -> dict:
+    return {
+        "metadata": {
+            "name": name,
+            "device_label": "motor",
+            "ophyd_class": "EpicsMotor",
+        },
+        "spec": {
+            "name": name,
+            "device_class": "ophyd.EpicsMotor",
+            "args": [prefix],
+            "kwargs": {"name": name},
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_sync_bootstraps_when_registry_empty():
+    changes_payload = {
+        "current_version": 3,
+        "service_epoch": "2026-01-01",
+        "reset_occurred": False,
+        "changes": [],
+    }
+    handlers = [
+        _json_response(200, {}),                      # /devices-info: empty
+        _json_response(201, {"success": True}),       # POST m1
+        _json_response(201, {"success": True}),       # POST m2
+        _json_response(200, changes_payload),         # /devices/changes
+    ]
+    client, responder = await _aclient(handlers)
+    async with client:
+        cursor, epoch = await sync_devices_on_env_open(
+            client,
+            expected_device_names=["m1", "m2"],
+            device_data={"m1": _device_payload("m1"), "m2": _device_payload("m2")},
+        )
+    assert cursor == 3
+    assert epoch == "2026-01-01"
+    methods = [c.method for c in responder.calls]
+    assert methods == ["GET", "POST", "POST", "GET"]
+    post_urls = [c.url.path for c in responder.calls if c.method == "POST"]
+    assert all(u == "/api/v1/devices" for u in post_urls)
+
+
+@pytest.mark.asyncio
+async def test_sync_skips_bootstrap_when_registry_non_empty():
+    changes_payload = {
+        "current_version": 42,
+        "service_epoch": "2026-01-01",
+        "reset_occurred": False,
+        "changes": [],
+    }
+    handlers = [
+        _json_response(200, {"m1": {"name": "m1"}}),  # /devices-info: populated
+        _json_response(200, changes_payload),         # /devices/changes
+    ]
+    client, responder = await _aclient(handlers)
+    async with client:
+        cursor, epoch = await sync_devices_on_env_open(
+            client,
+            expected_device_names=["m1"],
+            device_data={"m1": _device_payload("m1")},
+        )
+    assert cursor == 42
+    assert epoch == "2026-01-01"
+    assert [c.method for c in responder.calls] == ["GET", "GET"]
+
+
+@pytest.mark.asyncio
+async def test_sync_raises_if_introspection_missed_a_device():
+    client, responder = await _aclient([])
+    async with client:
+        with pytest.raises(ConfigServiceError, match="missing_device"):
+            await sync_devices_on_env_open(
+                client,
+                expected_device_names=["m1", "missing_device"],
+                device_data={"m1": _device_payload("m1")},
+            )
+    assert responder.calls == []
+
+
+@pytest.mark.asyncio
+async def test_sync_propagates_bootstrap_failure():
+    handlers = [
+        _json_response(200, {}),                       # empty
+        _json_response(500, {"detail": "db gone"}),    # POST fails hard
+    ]
+    client, _ = await _aclient(handlers)
+    async with client:
+        with pytest.raises(ConfigServiceHTTPError):
+            await sync_devices_on_env_open(
+                client,
+                expected_device_names=["m1"],
+                device_data={"m1": _device_payload("m1")},
+            )
 
 

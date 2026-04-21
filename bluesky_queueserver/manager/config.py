@@ -213,6 +213,7 @@ _key_mapping = {
     "update_existing_plans_devices": "operation/update_existing_plans_and_devices",
     "user_group_permissions_reload": "operation/user_group_permissions_reload",
     "emergency_lock_key": "operation/emergency_lock_key",
+    "config_service": "config_service",
 }
 
 
@@ -569,6 +570,10 @@ class Settings:
             value_ev=os.environ.get("QSERVER_EMERGENCY_LOCK_KEY_FOR_SERVER", None),
             value_config=self._get_value_from_config("emergency_lock_key"),
         )
+
+        # Raw config_service section: parsed into ConfigServiceSettings later
+        # in the manager process (keeps httpx off the legacy-path import graph).
+        self._settings["config_service"] = self._get_value_from_config("config_service") or {}
 
     def __getattr__(self, attr):
         if attr in self._settings:

@@ -333,3 +333,42 @@ def _safe_body(response: Any) -> Any:
             return response.text
         except Exception:
             return None
+
+
+async def sync_devices_on_env_open(
+    client: ConfigServiceClient,
+    expected_device_names: List[str],
+    device_data: Dict[str, Dict[str, Any]],
+) -> Tuple[int, str]:
+    """Bootstrap-if-empty and capture the version cursor.
+
+    Raises ``ConfigServiceError`` if ``device_data`` is missing entries for
+    any expected device (i.e. worker-side introspection couldn't produce
+    a payload for a device the manager thinks exists). Per the no-silent-
+    fallback rule, we do not proceed with partial registry contents.
+    """
+    missing = [name for name in expected_device_names if name not in device_data]
+    if missing:
+        raise ConfigServiceError(
+            "config-service sync aborted: device introspection did not produce "
+            "metadata/spec for the following devices (check worker logs for "
+            f"per-device extraction failures): {sorted(missing)!r}"
+        )
+
+    is_empty = await client.is_registry_empty()
+    if is_empty:
+        logger.info(
+            "config-service registry is empty; bootstrapping %d device(s)",
+            len(device_data),
+        )
+        for name in sorted(device_data):
+            payload = device_data[name]
+            await client.upsert_device(payload["metadata"], payload["spec"])
+        logger.info("config-service bootstrap complete (%d device(s))", len(device_data))
+    else:
+        logger.info(
+            "config-service registry is populated; skipping bootstrap"
+        )
+
+    changes = await client.get_changes_since(0)
+    return int(changes["current_version"]), str(changes["service_epoch"])

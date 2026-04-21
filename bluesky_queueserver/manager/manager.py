@@ -373,6 +373,14 @@ class RunEngineManager(Process):
         self._user_group_permissions = {}
         self._existing_plans, self._existing_devices = {}, {}
         self._config_service_device_data: dict = {}
+
+        from .config_service import ConfigServiceSettings
+
+        self._config_service_settings = ConfigServiceSettings.from_config_dict(
+            self._config_dict.get("config_service")
+        )
+        self._config_service_cursor: int = 0
+        self._config_service_epoch: str = ""
         self._existing_plans_uid = _generate_uid()
         self._existing_devices_uid = _generate_uid()
         self._allowed_plans, self._allowed_devices = {}, {}
@@ -1027,7 +1035,31 @@ class RunEngineManager(Process):
             except Exception as ex:
                 logger.exception("Failed to compute the list of allowed plans and devices: %s", ex)
 
+            if self._config_service_settings.enabled:
+                await self._sync_config_service_on_env_open()
+
             self._status_update()
+
+    async def _sync_config_service_on_env_open(self) -> None:
+        """Bootstrap the config-service registry if empty, then capture the
+        version cursor used by the pre-plan staleness check (Layer 2.7).
+
+        Errors propagate to the caller so env-open fails loudly when
+        config-service is enabled but something went wrong.
+        """
+        from .config_service import ConfigServiceClient, sync_devices_on_env_open
+
+        async with ConfigServiceClient(self._config_service_settings) as client:
+            cursor, epoch = await sync_devices_on_env_open(
+                client,
+                expected_device_names=list(self._existing_devices.keys()),
+                device_data=self._config_service_device_data,
+            )
+        self._config_service_cursor = cursor
+        self._config_service_epoch = epoch
+        logger.info(
+            "config-service cursor=%d epoch=%s", cursor, epoch
+        )
 
     async def _load_task_results_from_worker(self):
         """
