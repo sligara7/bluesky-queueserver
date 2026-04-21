@@ -32,27 +32,26 @@ def _infer_device_label(obj: Any) -> str:
         return "flyer"
     try:
         from bluesky.protocols import Flyable, Movable, Readable
-        if isinstance(obj, Movable):
-            return "motor"
-        if isinstance(obj, Flyable):
-            return "flyer"
-        if isinstance(obj, Readable):
-            return "readable"
-    except Exception:
-        pass
+    except ImportError:
+        return "device"
+    if isinstance(obj, Movable):
+        return "motor"
+    if isinstance(obj, Flyable):
+        return "flyer"
+    if isinstance(obj, Readable):
+        return "readable"
     return "device"
 
 
 def _check_protocol(device: Any, proto_name: str) -> bool:
     try:
         import bluesky.protocols as bp
-
-        proto = getattr(bp, proto_name, None)
-        if proto is None:
-            return False
-        return isinstance(device, proto)
-    except Exception:
+    except ImportError:
         return False
+    proto = getattr(bp, proto_name, None)
+    if proto is None:
+        return False
+    return isinstance(device, proto)
 
 
 def _extract_ophyd_async_pvs(
@@ -63,11 +62,7 @@ def _extract_ophyd_async_pvs(
     children = getattr(device, "children", None)
     if children is None or not callable(children):
         return
-    try:
-        child_iter = children()
-    except Exception:
-        return
-    for child_name, child in child_iter:
+    for child_name, child in children():
         child_path = f"{path_prefix}{child_name}" if path_prefix else child_name
         source = getattr(child, "source", None)
         if source and isinstance(source, str) and "://" in source:
@@ -77,30 +72,28 @@ def _extract_ophyd_async_pvs(
 
 
 def _extract_pvs(obj: Any) -> Dict[str, str]:
+    """Multi-strategy PV discovery.
+
+    Tries ophyd-v1 components, then ophyd-async children(), then a top-level
+    .prefix. Unexpected errors from a live device (e.g. IOC disconnection
+    during introspection) propagate to the caller so they can be logged
+    against the specific device in build_config_service_payload.
+    """
     pvs: Dict[str, str] = {}
 
-    try:
-        for comp_name in getattr(obj, "component_names", ()):
-            comp = getattr(obj, comp_name, None)
-            if comp is None:
-                continue
-            pv = getattr(comp, "pvname", None)
-            if pv:
-                pvs[comp_name] = pv
-    except Exception:
-        pass
+    for comp_name in getattr(obj, "component_names", ()):
+        comp = getattr(obj, comp_name, None)
+        if comp is None:
+            continue
+        pv = getattr(comp, "pvname", None)
+        if pv:
+            pvs[comp_name] = pv
 
     if not pvs:
-        try:
-            _extract_ophyd_async_pvs(obj, "", pvs)
-        except Exception:
-            pass
+        _extract_ophyd_async_pvs(obj, "", pvs)
 
     if not pvs:
-        try:
-            prefix = getattr(obj, "prefix", None)
-        except Exception:
-            prefix = None
+        prefix = getattr(obj, "prefix", None)
         if prefix and isinstance(prefix, str):
             pvs["prefix"] = prefix
 

@@ -26,7 +26,6 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_URL = "http://localhost:8004"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_BACKOFF_MS = (200, 400)
@@ -69,7 +68,7 @@ class ConfigServiceSettings:
     """Parsed ``config_service`` section of the server configuration."""
 
     enabled: bool = False
-    url: str = DEFAULT_URL
+    url: str = ""
     timeout: float = DEFAULT_TIMEOUT_SECONDS
     max_attempts: int = DEFAULT_MAX_ATTEMPTS
     backoff_ms: Tuple[int, ...] = DEFAULT_BACKOFF_MS
@@ -83,7 +82,12 @@ class ConfigServiceSettings:
         if not enabled:
             return cls(enabled=False)
 
-        url = section.get("url", DEFAULT_URL)
+        if "url" not in section or not section["url"]:
+            raise ValueError(
+                "config_service.enabled is true but config_service.url is not set. "
+                "Set url explicitly (there is no default)."
+            )
+        url = section["url"]
         timeout = float(section.get("timeout", DEFAULT_TIMEOUT_SECONDS))
 
         max_attempts = int(section.get("max_attempts", DEFAULT_MAX_ATTEMPTS))

@@ -85,10 +85,17 @@ def test_settings_defaults_when_section_missing():
     assert s.enabled is False
 
 
-def test_settings_enabled_with_defaults():
-    s = ConfigServiceSettings.from_config_dict({"enabled": True})
+def test_settings_enabled_requires_url():
+    with pytest.raises(ValueError, match="url"):
+        ConfigServiceSettings.from_config_dict({"enabled": True})
+
+
+def test_settings_enabled_with_url_uses_tuning_defaults():
+    s = ConfigServiceSettings.from_config_dict(
+        {"enabled": True, "url": "http://cs.test:8004"}
+    )
     assert s.enabled is True
-    assert s.url == "http://localhost:8004"
+    assert s.url == "http://cs.test:8004"
     assert s.max_attempts == 3
     assert s.backoff_ms == (200, 400)
 
@@ -113,7 +120,9 @@ def test_settings_overrides():
 
 def test_settings_max_attempts_must_be_positive():
     with pytest.raises(ValueError):
-        ConfigServiceSettings.from_config_dict({"enabled": True, "max_attempts": 0})
+        ConfigServiceSettings.from_config_dict(
+            {"enabled": True, "url": "http://cs.test", "max_attempts": 0}
+        )
 
 
 def test_disabled_settings_reject_client_construction():

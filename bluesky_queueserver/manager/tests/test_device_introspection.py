@@ -129,8 +129,10 @@ def test_extract_pvs_returns_empty_for_uninstrumented_device():
     assert _extract_pvs(FakeNothing(name="nothing")) == {}
 
 
-def test_extract_pvs_survives_broken_attributes():
-    assert _extract_pvs(FakeBrokenDevice()) == {}
+def test_extract_pvs_propagates_broken_attribute_exceptions():
+    import pytest
+    with pytest.raises(RuntimeError, match="iocs not responding"):
+        _extract_pvs(FakeBrokenDevice())
 
 
 # ===== device_to_metadata_dict =====
@@ -203,14 +205,12 @@ def test_build_payload_contains_entry_per_device():
     assert payload["d1"]["spec"]["args"] == ["XF:01-Det{D1}"]
 
 
-def test_build_payload_skips_device_that_raises_during_extraction(caplog):
+def test_build_payload_skips_device_that_raises_during_extraction():
     devices = {
         "good": FakeOphydMotor(prefix="XF:01-Mtr{M1}", name="good"),
         "bad": FakeBrokenDevice(),
     }
     payload = build_config_service_payload(devices)
     assert "good" in payload
-    # Broken device's metadata build still succeeds (our helpers catch AttributeError
-    # etc. internally) — we're not asserting it's skipped, just that the good one
-    # survives.
+    assert "bad" not in payload
     assert payload["good"]["spec"]["args"] == ["XF:01-Mtr{M1}"]
