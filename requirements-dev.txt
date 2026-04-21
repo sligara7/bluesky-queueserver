@@ -33,5 +33,7 @@ aioca
 ophyd-async
 # Required by the Layer 2.8 config-service integration tests
 # (bluesky_queueserver/manager/tests/test_config_service_integration.py).
-# The test module boots configuration_service.main.create_app in-process.
+# The test module boots configuration_service.main.create_app in-process
+# and drives its ASGI lifespan via asgi-lifespan.LifespanManager.
 bluesky-configuration-service
+asgi-lifespan
