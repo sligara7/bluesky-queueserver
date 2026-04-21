@@ -171,8 +171,17 @@ class ConfigServiceClient:
     # Public API ---------------------------------------------------------
 
     async def get_devices_info(self) -> Dict[str, Any]:
-        """Return full device registry keyed by device name."""
+        """Return registry metadata keyed by device name (no instantiation specs)."""
         return await self._request("GET", "/api/v1/devices-info")
+
+    async def get_instantiation_specs(self) -> Dict[str, Dict[str, Any]]:
+        """Return ``{name: DeviceInstantiationSpec}`` for every device in the registry."""
+        body = await self._request("GET", "/api/v1/devices/instantiation")
+        if not isinstance(body, dict):
+            raise ConfigServiceProtocolError(
+                f"/devices/instantiation returned non-dict body: {type(body).__name__}"
+            )
+        return body
 
     async def is_registry_empty(self) -> bool:
         info = await self.get_devices_info()
@@ -353,6 +362,7 @@ async def sync_devices_on_env_open(
     client: ConfigServiceClient,
     expected_device_names: List[str],
     device_data: Dict[str, Dict[str, Any]],
+    prefetched_info: Optional[Dict[str, Any]] = None,
 ) -> ConfigServiceState:
     """Bootstrap-if-empty and capture the version cursor.
 
@@ -360,6 +370,10 @@ async def sync_devices_on_env_open(
     any expected device (i.e. worker-side introspection couldn't produce
     a payload for a device the manager thinks exists). Per the no-silent-
     fallback rule, we do not proceed with partial registry contents.
+
+    ``prefetched_info`` — when the manager already fetched /devices-info at
+    the start of env-open (Layer 2.6 consume-mode), pass the result here to
+    skip the redundant probe. ``None`` means "I don't know, ask the service".
     """
     missing = [name for name in expected_device_names if name not in device_data]
     if missing:
@@ -369,7 +383,11 @@ async def sync_devices_on_env_open(
             f"per-device extraction failures): {sorted(missing)!r}"
         )
 
-    is_empty = await client.is_registry_empty()
+    is_empty = (
+        len(prefetched_info) == 0
+        if prefetched_info is not None
+        else await client.is_registry_empty()
+    )
     if is_empty:
         logger.info(
             "config-service registry is empty; bootstrapping %d device(s)",

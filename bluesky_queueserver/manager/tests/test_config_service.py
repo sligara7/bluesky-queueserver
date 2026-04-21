@@ -428,3 +428,76 @@ async def test_sync_propagates_bootstrap_failure():
             )
 
 
+# ===== Layer 2.6: get_instantiation_specs + prefetched_info =====
+
+
+@pytest.mark.asyncio
+async def test_get_instantiation_specs_returns_body():
+    specs = {
+        "m1": {"name": "m1", "device_class": "ophyd.EpicsMotor", "args": ["XF:M1"], "kwargs": {"name": "m1"}},
+    }
+    client, responder = await _aclient([_json_response(200, specs)])
+    async with client:
+        body = await client.get_instantiation_specs()
+    assert body == specs
+    assert responder.calls[0].url.path == "/api/v1/devices/instantiation"
+
+
+@pytest.mark.asyncio
+async def test_get_instantiation_specs_rejects_non_dict():
+    client, _ = await _aclient([_json_response(200, ["not", "a", "dict"])])
+    async with client:
+        with pytest.raises(ConfigServiceProtocolError):
+            await client.get_instantiation_specs()
+
+
+@pytest.mark.asyncio
+async def test_sync_with_prefetched_info_empty_bootstraps_without_probe():
+    """prefetched_info={} → skip GET /devices-info, go straight to upsert+changes."""
+    changes_payload = {
+        "current_version": 1,
+        "service_epoch": "2026-04",
+        "reset_occurred": False,
+        "changes": [],
+    }
+    handlers = [
+        _json_response(201, {"success": True}),   # POST m1 (bootstrap)
+        _json_response(200, changes_payload),     # GET /devices/changes
+    ]
+    client, responder = await _aclient(handlers)
+    async with client:
+        state = await sync_devices_on_env_open(
+            client,
+            expected_device_names=["m1"],
+            device_data={"m1": _device_payload("m1")},
+            prefetched_info={},
+        )
+    assert state == ConfigServiceState(cursor=1, epoch="2026-04")
+    methods = [c.method for c in responder.calls]
+    assert methods == ["POST", "GET"]  # no /devices-info probe
+    paths = [c.url.path for c in responder.calls]
+    assert "/api/v1/devices-info" not in paths
+
+
+@pytest.mark.asyncio
+async def test_sync_with_prefetched_info_populated_skips_bootstrap_and_probe():
+    """prefetched_info populated → no probe, no upserts, only /changes."""
+    changes_payload = {
+        "current_version": 9,
+        "service_epoch": "2026-04",
+        "reset_occurred": False,
+        "changes": [],
+    }
+    handlers = [_json_response(200, changes_payload)]
+    client, responder = await _aclient(handlers)
+    async with client:
+        state = await sync_devices_on_env_open(
+            client,
+            expected_device_names=["m1"],
+            device_data={"m1": _device_payload("m1")},
+            prefetched_info={"m1": {"name": "m1"}},
+        )
+    assert state == ConfigServiceState(cursor=9, epoch="2026-04")
+    assert [c.method for c in responder.calls] == ["GET"]
+    assert responder.calls[0].url.path == "/api/v1/devices/changes"
+

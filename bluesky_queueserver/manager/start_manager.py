@@ -95,17 +95,28 @@ class WatchdogProcess:
         self._watchdog_enabled = True
         return {"success": True}
 
-    def _start_re_worker_handler(self, user_group_permissions):
+    def _start_re_worker_handler(self, user_group_permissions, config_service_device_specs=None):
         """
         Creates worker process. This is a quick operation, because it starts RE Worker
         process without waiting for initialization.
+
+        ``config_service_device_specs`` is an optional ``{name: spec}`` dict
+        fetched by the manager from bluesky-configuration-service. When
+        present, it is spliced into the per-spawn worker config so the worker
+        can overlay registry-sourced devices onto the profile namespace
+        (Layer 2.6 consume-mode). The watchdog's own ``_config_worker`` is
+        not mutated — a shallow copy carries the one-shot specs.
         """
         logger.info("Starting RE Worker ...")
         try:
+            worker_config = self._config_worker
+            if config_service_device_specs:
+                worker_config = dict(worker_config)
+                worker_config["config_service_device_specs"] = config_service_device_specs
             self._re_worker = self._cls_run_engine_worker(
                 conn=self._manager_conn,
                 name="RE Worker Process",
-                config=self._config_worker,
+                config=worker_config,
                 msg_queue=self._msg_queue,
                 log_level=self._log_level,
                 user_group_permissions=user_group_permissions,

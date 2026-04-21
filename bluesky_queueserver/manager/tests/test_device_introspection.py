@@ -15,6 +15,8 @@ from bluesky_queueserver.manager.device_introspection import (
     build_config_service_payload,
     device_to_instantiation_spec,
     device_to_metadata_dict,
+    import_device_class,
+    instantiate_device_from_spec,
 )
 
 
@@ -97,6 +99,17 @@ class FakeBrokenDevice:
     @property
     def prefix(self):
         raise RuntimeError("iocs not responding")
+
+
+class FakePositionalMotor:
+    """Device whose ctor accepts ``(prefix, *, name)`` — matches the shape of
+    real ophyd.EpicsMotor that the narrow spec was designed around. Used by
+    the reverse-path round-trip test.
+    """
+
+    def __init__(self, prefix, *, name):
+        self.prefix = prefix
+        self.name = name
 
 
 # ===== _extract_pvs =====
@@ -214,3 +227,71 @@ def test_build_payload_skips_device_that_raises_during_extraction():
     assert "good" in payload
     assert "bad" not in payload
     assert payload["good"]["spec"]["args"] == ["XF:01-Mtr{M1}"]
+
+
+# ===== import_device_class / instantiate_device_from_spec (Layer 2.6 reverse path) =====
+
+
+def test_import_device_class_happy_path():
+    cls = import_device_class(f"{FakeOphydMotor.__module__}.FakeOphydMotor")
+    assert cls is FakeOphydMotor
+
+
+def test_import_device_class_missing_module():
+    import pytest
+    with pytest.raises(ImportError, match="no_such_module"):
+        import_device_class("no_such_module.NoClass")
+
+
+def test_import_device_class_missing_attr():
+    import pytest
+    with pytest.raises(ImportError, match="NoSuchClass"):
+        import_device_class(f"{FakeOphydMotor.__module__}.NoSuchClass")
+
+
+def test_import_device_class_rejects_path_without_dot():
+    import pytest
+    with pytest.raises(ImportError, match="no module"):
+        import_device_class("nodot")
+
+
+def test_instantiate_roundtrip_preserves_class_and_args():
+    # Needs a class with a positional-prefix ctor — the narrow spec captures
+    # prefix as args[0], matching real ophyd.EpicsMotor's signature.
+    original = FakePositionalMotor("XF:01-Mtr{M1}", name="m1")
+    spec = device_to_instantiation_spec("m1", original)
+    revived = instantiate_device_from_spec(spec)
+    assert isinstance(revived, FakePositionalMotor)
+    assert revived.prefix == "XF:01-Mtr{M1}"
+    assert revived.name == "m1"
+
+
+def test_instantiate_from_spec_missing_device_class_key():
+    import pytest
+    with pytest.raises(ValueError, match="device_class"):
+        instantiate_device_from_spec({"args": [], "kwargs": {}})
+
+
+def test_instantiate_from_spec_propagates_constructor_failure():
+    """Fidelity gap: narrow spec (prefix+name) can miss required kwargs. When
+    the stored class demands a kwarg the spec didn't capture, instantiation
+    must fail loudly — not silently return a half-configured device."""
+    import pytest
+
+    class StrictDevice:
+        def __init__(self, *, prefix, name, required_kwarg):
+            self.prefix = prefix
+            self.name = name
+            self.required = required_kwarg
+
+    spec = {
+        "name": "s1",
+        "device_class": f"{__name__}.test_instantiate_from_spec_propagates_constructor_failure.<locals>.StrictDevice",
+        "args": [],
+        "kwargs": {"name": "s1"},
+        "active": True,
+    }
+    # Local classes aren't importable by a dotted path, so this path triggers
+    # an ImportError rather than a TypeError — still the hard-fail we want.
+    with pytest.raises(ImportError):
+        instantiate_device_from_spec(spec)

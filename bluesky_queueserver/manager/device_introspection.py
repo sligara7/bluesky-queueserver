@@ -14,6 +14,7 @@ consumer (manager-side config-service sync) decides how to handle that.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from typing import Any, Dict, List
 
@@ -158,6 +159,41 @@ def device_to_instantiation_spec(name: str, device: Any) -> Dict[str, Any]:
         "kwargs": {"name": name},
         "active": True,
     }
+
+
+def import_device_class(class_path: str) -> type:
+    """Import a class from its fully qualified ``module.ClassName`` path.
+
+    Raises ImportError on missing module or attribute. Consume-mode env-load
+    is strict: any failure fails env-open loudly (see
+    feedback_backwards_compat.md — no silent fallbacks).
+    """
+    if "." not in class_path:
+        raise ImportError(f"Invalid class path (no module): {class_path!r}")
+    module_name, class_name = class_path.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    try:
+        return getattr(module, class_name)
+    except AttributeError:
+        raise ImportError(f"Class {class_name!r} not found in module {module_name!r}")
+
+
+def instantiate_device_from_spec(spec: Dict[str, Any]) -> Any:
+    """Instantiate a live device object from a ``DeviceInstantiationSpec`` dict.
+
+    Inverse of :func:`device_to_instantiation_spec`. Uses the spec's
+    ``device_class`` as a dotted import path and calls the class with
+    ``args`` + ``kwargs``. Fidelity is bounded by what the spec captured —
+    see project_spec_fidelity_followup.md for the known narrow-spec gap.
+    """
+    try:
+        class_path = spec["device_class"]
+    except KeyError:
+        raise ValueError(f"spec missing required key 'device_class': {spec!r}")
+    args = list(spec.get("args", []))
+    kwargs = dict(spec.get("kwargs", {}))
+    device_class = import_device_class(class_path)
+    return device_class(*args, **kwargs)
 
 
 def build_config_service_payload(

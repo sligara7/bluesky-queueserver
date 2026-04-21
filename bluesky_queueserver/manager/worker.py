@@ -16,7 +16,7 @@ from threading import Thread
 
 from .comms import PipeJsonRpcReceive
 from .config import profile_name_to_startup_dir
-from .device_introspection import build_config_service_payload
+from .device_introspection import build_config_service_payload, instantiate_device_from_spec
 from .logging_setup import PPrintForLogging as ppfl
 from .logging_setup import setup_loggers
 from .output_streaming import setup_console_output_redirection
@@ -1417,6 +1417,23 @@ class RunEngineWorker(Process):
                     startup_module_name=startup_module_name,
                     startup_script_path=startup_script_path,
                     nspace=self._re_namespace,
+                )
+
+            # Layer 2.6 — consume-mode overlay. When the manager prefetched
+            # instantiation specs from bluesky-configuration-service, replace
+            # any profile-defined device of the same name with a registry-
+            # sourced instance so all services agree on device definitions.
+            # Plans continue to come from the profile. Hard-fail on any
+            # instantiation error (no silent fallback to profile devices).
+            device_specs = self._config_dict.get("config_service_device_specs") or {}
+            if device_specs:
+                overlay_count = 0
+                for name, spec in device_specs.items():
+                    self._re_namespace[name] = instantiate_device_from_spec(spec)
+                    overlay_count += 1
+                logger.info(
+                    "config-service consume-mode: overlaid %d device(s) onto the profile namespace",
+                    overlay_count,
                 )
 
             # if "RE" not in self._re_namespace:

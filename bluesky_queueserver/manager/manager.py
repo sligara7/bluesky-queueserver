@@ -384,6 +384,10 @@ class RunEngineManager(Process):
         # Stable for the manager's lifetime; used as item_id on every lock/unlock.
         self._config_service_lock_item_id = f"env:{_generate_uid()}"
         self._config_service_locked_devices: list = []
+        # Registry snapshot fetched at the start of env-open when consume-mode
+        # is active. Populated only if config_service.enabled AND the registry
+        # is non-empty; stays None otherwise (legacy / bootstrap path).
+        self._config_service_prefetched_info: dict = {}
         self._existing_plans_uid = _generate_uid()
         self._existing_devices_uid = _generate_uid()
         self._allowed_plans, self._allowed_devices = {}, {}
@@ -603,6 +607,48 @@ class RunEngineManager(Process):
 
         return accepted, msg
 
+    async def _prefetch_config_service_registry(self) -> dict:
+        """Fetch the config-service registry before spawning the worker.
+
+        Returns the ``{name: spec}`` dict that should be forwarded to the
+        worker (empty dict if consume-mode does not apply). Populates
+        ``self._config_service_prefetched_info`` so the post-env-open sync
+        can reuse it and skip the redundant ``is_registry_empty`` probe.
+
+        Any failure propagates — env-open fails loudly when config-service
+        is enabled (see feedback_backwards_compat memory).
+        """
+        self._config_service_prefetched_info = {}
+        if not self._config_service_settings.enabled:
+            return {}
+
+        from .config_service import ConfigServiceClient
+
+        async with ConfigServiceClient(self._config_service_settings) as client:
+            info, specs = await asyncio.gather(
+                client.get_devices_info(),
+                client.get_instantiation_specs(),
+            )
+        if not isinstance(info, dict):
+            raise RuntimeError(
+                f"config-service /devices-info returned non-dict body: {type(info).__name__}"
+            )
+        self._config_service_prefetched_info = info
+        if not info:
+            # Registry empty → legacy bootstrap path; do not inject specs.
+            return {}
+        missing_specs = [name for name in info if name not in specs]
+        if missing_specs:
+            raise RuntimeError(
+                "config-service registry is inconsistent: devices present in "
+                f"/devices-info are missing from /devices/instantiation: {sorted(missing_specs)!r}"
+            )
+        logger.info(
+            "config-service consume-mode: prefetched %d device spec(s) for worker injection",
+            len(specs),
+        )
+        return dict(specs)
+
     async def _start_re_worker_task(self):
         """
         Creates worker process.
@@ -617,7 +663,8 @@ class RunEngineManager(Process):
         self._fut_manager_task_completed = self._loop.create_future()
 
         try:
-            success = await self._watchdog_start_re_worker()
+            device_specs = await self._prefetch_config_service_registry()
+            success = await self._watchdog_start_re_worker(device_specs=device_specs)
             if not success:
                 raise RuntimeError("Failed to create Worker process")
             logger.info("Waiting for RE worker to start ...")
@@ -1072,6 +1119,7 @@ class RunEngineManager(Process):
                 client,
                 expected_device_names=device_names,
                 device_data=self._config_service_device_data,
+                prefetched_info=self._config_service_prefetched_info,
             )
             if not self._config_service_locked_devices and device_names:
                 await client.lock_devices(
@@ -1951,14 +1999,23 @@ class RunEngineManager(Process):
         # TODO: add processing of CommJsonRpcError and RuntimeError to all handlers !!!
         return success
 
-    async def _watchdog_start_re_worker(self):
+    async def _watchdog_start_re_worker(self, *, device_specs=None):
         """
         Initiate the startup of the RE Worker. Returned 'success==True' means that the process
         was created successfully and RE environment initialization is started.
+
+        ``device_specs`` — ``{name: DeviceInstantiationSpec}`` fetched from
+        config-service when consume-mode is active. Forwarded to the watchdog
+        so it can inject the specs into the worker's config dict at spawn time.
+        Empty/None means the legacy profile-driven path; byte-identical to
+        the pre-2.6 behavior.
         """
+        params: dict = {"user_group_permissions": self._user_group_permissions}
+        if device_specs:
+            params["config_service_device_specs"] = device_specs
         try:
             response = await self._comm_to_watchdog.send_msg(
-                "start_re_worker", params={"user_group_permissions": self._user_group_permissions}
+                "start_re_worker", params=params
             )
             success = response["success"]
         except CommTimeoutError:
