@@ -16,6 +16,7 @@ from threading import Thread
 
 from .comms import PipeJsonRpcReceive
 from .config import profile_name_to_startup_dir
+from .device_introspection import build_config_service_payload
 from .logging_setup import PPrintForLogging as ppfl
 from .logging_setup import setup_loggers
 from .output_streaming import setup_console_output_redirection
@@ -845,8 +846,6 @@ class RunEngineWorker(Process):
 
             if self._existing_plans_and_devices_changed:
                 # Descriptions of existing plans and devices
-                from .device_introspection import build_config_service_payload
-
                 with self._existing_items_lock:
                     self._existing_plans, self._existing_devices = existing_plans, existing_devices
                     self._config_service_device_data = build_config_service_payload(devices_in_nspace)
@@ -1438,8 +1437,6 @@ class RunEngineWorker(Process):
             # )
 
             # Descriptions of existing plans and devices
-            from .device_introspection import build_config_service_payload
-
             with self._existing_items_lock:
                 self._existing_plans, self._existing_devices = existing_plans, existing_devices
                 self._config_service_device_data = build_config_service_payload(devices_in_nspace)

@@ -64,6 +64,20 @@ class ConfigServiceProtocolError(ConfigServiceError):
 
 
 @dataclasses.dataclass(frozen=True)
+class ConfigServiceState:
+    """State captured at env-open and advanced by the pre-plan staleness check.
+
+    ``cursor`` is the audit-log id the client has already applied; the next
+    /devices/changes call uses it as ``since_version``. ``epoch`` is the
+    service-instance identifier; a mismatch on a later call means the cursor
+    is invalid and the client must re-fetch the full registry.
+    """
+
+    cursor: int = 0
+    epoch: str = ""
+
+
+@dataclasses.dataclass(frozen=True)
 class ConfigServiceSettings:
     """Parsed ``config_service`` section of the server configuration."""
 
@@ -339,7 +353,7 @@ async def sync_devices_on_env_open(
     client: ConfigServiceClient,
     expected_device_names: List[str],
     device_data: Dict[str, Dict[str, Any]],
-) -> Tuple[int, str]:
+) -> ConfigServiceState:
     """Bootstrap-if-empty and capture the version cursor.
 
     Raises ``ConfigServiceError`` if ``device_data`` is missing entries for
@@ -361,9 +375,12 @@ async def sync_devices_on_env_open(
             "config-service registry is empty; bootstrapping %d device(s)",
             len(device_data),
         )
-        for name in sorted(device_data):
-            payload = device_data[name]
-            await client.upsert_device(payload["metadata"], payload["spec"])
+        await asyncio.gather(
+            *(
+                client.upsert_device(payload["metadata"], payload["spec"])
+                for payload in device_data.values()
+            )
+        )
         logger.info("config-service bootstrap complete (%d device(s))", len(device_data))
     else:
         logger.info(
@@ -371,4 +388,7 @@ async def sync_devices_on_env_open(
         )
 
     changes = await client.get_changes_since(0)
-    return int(changes["current_version"]), str(changes["service_epoch"])
+    return ConfigServiceState(
+        cursor=int(changes["current_version"]),
+        epoch=str(changes["service_epoch"]),
+    )

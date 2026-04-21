@@ -374,13 +374,12 @@ class RunEngineManager(Process):
         self._existing_plans, self._existing_devices = {}, {}
         self._config_service_device_data: dict = {}
 
-        from .config_service import ConfigServiceSettings
+        from .config_service import ConfigServiceSettings, ConfigServiceState
 
         self._config_service_settings = ConfigServiceSettings.from_config_dict(
             self._config_dict.get("config_service")
         )
-        self._config_service_cursor: int = 0
-        self._config_service_epoch: str = ""
+        self._config_service_state = ConfigServiceState()
         self._existing_plans_uid = _generate_uid()
         self._existing_devices_uid = _generate_uid()
         self._allowed_plans, self._allowed_devices = {}, {}
@@ -1050,15 +1049,14 @@ class RunEngineManager(Process):
         from .config_service import ConfigServiceClient, sync_devices_on_env_open
 
         async with ConfigServiceClient(self._config_service_settings) as client:
-            cursor, epoch = await sync_devices_on_env_open(
+            state = await sync_devices_on_env_open(
                 client,
                 expected_device_names=list(self._existing_devices.keys()),
                 device_data=self._config_service_device_data,
             )
-        self._config_service_cursor = cursor
-        self._config_service_epoch = epoch
+        self._config_service_state = state
         logger.info(
-            "config-service cursor=%d epoch=%s", cursor, epoch
+            "config-service cursor=%d epoch=%s", state.cursor, state.epoch
         )
 
     async def _load_task_results_from_worker(self):

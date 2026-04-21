@@ -22,6 +22,7 @@ from bluesky_queueserver.manager.config_service import (
     ConfigServiceNotFound,
     ConfigServiceProtocolError,
     ConfigServiceSettings,
+    ConfigServiceState,
     ConfigServiceUnreachable,
     sync_devices_on_env_open,
 )
@@ -360,15 +361,17 @@ async def test_sync_bootstraps_when_registry_empty():
     ]
     client, responder = await _aclient(handlers)
     async with client:
-        cursor, epoch = await sync_devices_on_env_open(
+        state = await sync_devices_on_env_open(
             client,
             expected_device_names=["m1", "m2"],
             device_data={"m1": _device_payload("m1"), "m2": _device_payload("m2")},
         )
-    assert cursor == 3
-    assert epoch == "2026-01-01"
+    assert state == ConfigServiceState(cursor=3, epoch="2026-01-01")
+    # GET /devices-info → 2 parallel POSTs (order undefined under gather) → GET /changes
     methods = [c.method for c in responder.calls]
-    assert methods == ["GET", "POST", "POST", "GET"]
+    assert methods[0] == "GET"
+    assert methods[-1] == "GET"
+    assert sorted(methods[1:-1]) == ["POST", "POST"]
     post_urls = [c.url.path for c in responder.calls if c.method == "POST"]
     assert all(u == "/api/v1/devices" for u in post_urls)
 
@@ -387,13 +390,12 @@ async def test_sync_skips_bootstrap_when_registry_non_empty():
     ]
     client, responder = await _aclient(handlers)
     async with client:
-        cursor, epoch = await sync_devices_on_env_open(
+        state = await sync_devices_on_env_open(
             client,
             expected_device_names=["m1"],
             device_data={"m1": _device_payload("m1")},
         )
-    assert cursor == 42
-    assert epoch == "2026-01-01"
+    assert state == ConfigServiceState(cursor=42, epoch="2026-01-01")
     assert [c.method for c in responder.calls] == ["GET", "GET"]
 
 
