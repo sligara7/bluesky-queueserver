@@ -354,3 +354,24 @@ properties:
         pattern: "^(NEVER)|(ON_REQUEST)|(ON_STARTUP)"
       emergency_lock_key:
         type: string
+
+  config_service:
+    type: object
+    additionalProperties: false
+    properties:
+      enabled:
+        type: boolean
+      url:
+        type: string
+      timeout:
+        type: number
+      max_attempts:
+        type: integer
+        minimum: 1
+      backoff_ms:
+        type: array
+        items:
+          type: integer
+          minimum: 0
+      service_name:
+        type: string
