@@ -15,6 +15,7 @@ import zmq.asyncio
 import bluesky_queueserver
 
 from .comms import CommTimeoutError, PipeJsonRpcSendAsync, ZMQEncoding, process_zmq_encoding_name, validate_zmq_key
+from .config_service import ConfigServiceError
 from .logging_setup import PPrintForLogging as ppfl
 from .logging_setup import setup_loggers
 from .output_streaming import push_info_to_msg_queue, setup_console_output_redirection
@@ -1146,17 +1147,17 @@ class RunEngineManager(Process):
         async with ConfigServiceClient(self._config_service_settings) as client:
             plan = await fetch_staleness_plan(client, self._config_service_state)
 
-        if plan.mode == "noop":
+        if plan.is_noop:
             return
 
         logger.info(
-            "config-service staleness check: mode=%s upserts=%d deletes=%d",
-            plan.mode,
+            "config-service staleness check: replace=%s upserts=%d deletes=%d",
+            plan.replace_overlay,
             len(plan.upserts),
             len(plan.deletes),
         )
         success, err_msg = await self._worker_command_update_device_overlay(
-            plan.upserts, plan.deletes
+            plan.upserts, plan.deletes, replace=plan.replace_overlay
         )
         if not success:
             raise RuntimeError(
@@ -1355,7 +1356,7 @@ class RunEngineManager(Process):
                 # reset-failure path below.
                 try:
                     await self._check_staleness_before_plan()
-                except Exception as ex:  # noqa: BLE001
+                except (ConfigServiceError, CommTimeoutError, RuntimeError) as ex:
                     self._manager_state = MState.IDLE
                     err_msg = f"config-service staleness check failed: {ex}"
                     logger.error(err_msg)
@@ -1927,11 +1928,11 @@ class RunEngineManager(Process):
             success, err_msg = None, "Timeout occurred while processing the request"
         return success, err_msg
 
-    async def _worker_command_update_device_overlay(self, upserts, deletes):
+    async def _worker_command_update_device_overlay(self, upserts, deletes, *, replace):
         try:
             response = await self._comm_to_worker.send_msg(
                 "command_update_device_overlay",
-                {"upserts": upserts, "deletes": deletes},
+                {"upserts": upserts, "deletes": deletes, "replace": replace},
             )
             success = response["status"] == "accepted"
             err_msg = response["err_msg"]

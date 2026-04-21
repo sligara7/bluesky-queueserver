@@ -540,7 +540,8 @@ def _delete(name: str) -> dict:
 def test_build_staleness_plan_noop_when_no_changes():
     response = _changes_response(current_version=5, service_epoch="e1")
     plan = build_staleness_plan(response, saved_epoch="e1")
-    assert plan.mode == "noop"
+    assert plan.is_noop
+    assert plan.replace_overlay is False
     assert plan.upserts == {}
     assert plan.deletes == []
     assert plan.new_state == ConfigServiceState(cursor=5, epoch="e1")
@@ -553,7 +554,8 @@ def test_build_staleness_plan_incremental_upsert_and_delete():
         changes=[_upsert("m1"), _upsert("m2"), _delete("m3")],
     )
     plan = build_staleness_plan(response, saved_epoch="e1")
-    assert plan.mode == "incremental"
+    assert plan.replace_overlay is False
+    assert plan.is_noop is False
     assert set(plan.upserts) == {"m1", "m2"}
     assert plan.upserts["m1"]["device_class"] == "ophyd.EpicsMotor"
     assert plan.deletes == ["m3"]
@@ -567,7 +569,8 @@ def test_build_staleness_plan_full_on_reset_occurred():
     plan = build_staleness_plan(response, saved_epoch="e1")
     # reset means "discard local state"; upserts from the changes list are
     # irrelevant — the fetch step populates the full registry.
-    assert plan.mode == "full"
+    assert plan.replace_overlay is True
+    assert plan.is_noop is False
     assert plan.upserts == {}
     assert plan.deletes == []
 
@@ -577,7 +580,7 @@ def test_build_staleness_plan_full_on_epoch_mismatch():
         current_version=9, service_epoch="e2", changes=[_upsert("m1")]
     )
     plan = build_staleness_plan(response, saved_epoch="e1")
-    assert plan.mode == "full"
+    assert plan.replace_overlay is True
     assert plan.new_state.epoch == "e2"
 
 
@@ -603,7 +606,7 @@ async def test_fetch_staleness_plan_incremental_hits_only_changes():
     client, responder = await _aclient([_json_response(200, changes)])
     async with client:
         plan = await fetch_staleness_plan(client, ConfigServiceState(cursor=5, epoch="e1"))
-    assert plan.mode == "incremental"
+    assert plan.replace_overlay is False
     assert set(plan.upserts) == {"m1"}
     paths = [c.url.path for c in responder.calls]
     assert paths == ["/api/v1/devices/changes"]
@@ -621,7 +624,7 @@ async def test_fetch_staleness_plan_full_also_fetches_instantiation_specs():
     client, responder = await _aclient(handlers)
     async with client:
         plan = await fetch_staleness_plan(client, ConfigServiceState(cursor=3, epoch="e1"))
-    assert plan.mode == "full"
+    assert plan.replace_overlay is True
     assert set(plan.upserts) == {"m1", "m2"}
     paths = [c.url.path for c in responder.calls]
     assert paths == ["/api/v1/devices/changes", "/api/v1/devices/instantiation"]
@@ -633,7 +636,87 @@ async def test_fetch_staleness_plan_noop_only_hits_changes_endpoint():
     client, responder = await _aclient([_json_response(200, changes)])
     async with client:
         plan = await fetch_staleness_plan(client, ConfigServiceState(cursor=7, epoch="e1"))
-    assert plan.mode == "noop"
+    assert plan.is_noop
     # No /devices/instantiation call, no side-effects beyond the /changes probe.
     assert [c.url.path for c in responder.calls] == ["/api/v1/devices/changes"]
+
+
+# ===== Layer 2.7 worker handler: full-replace drops stale overlay =====
+
+
+def _call_overlay_handler(
+    overlay_names, namespace, *, upserts, deletes, replace
+):
+    """Invoke the worker's handler against a stand-in with the two attrs
+    it actually reads, so we can test the replace-overlay semantics without
+    spinning up a real Process. Patches ``instantiate_device_from_spec`` to
+    an identity function so we stay stdlib-only."""
+    from bluesky_queueserver.manager import worker as worker_mod
+
+    class _Stub:
+        re_state = "idle"
+
+    stub = _Stub()
+    stub._re_namespace = dict(namespace)
+    stub._config_service_overlay_names = set(overlay_names)
+
+    real_instantiate = worker_mod.instantiate_device_from_spec
+    worker_mod.instantiate_device_from_spec = lambda spec: f"instance({spec['name']})"
+    try:
+        result = worker_mod.RunEngineWorker._command_update_device_overlay_handler(
+            stub, upserts=upserts, deletes=deletes, replace=replace
+        )
+    finally:
+        worker_mod.instantiate_device_from_spec = real_instantiate
+    return result, stub
+
+
+def test_overlay_handler_full_replace_drops_stale_overlay_but_keeps_profile_devices():
+    # Profile owns 'profile_only'; previous config-service overlay owned
+    # {'m1', 'm2'}. A full replace with upserts={'m1', 'm3'} should:
+    #   - keep 'profile_only' (never overlaid)
+    #   - drop 'm2' implicitly (overlaid before, absent from new registry)
+    #   - replace 'm1' with the new spec's instance
+    #   - add 'm3'
+    namespace = {
+        "profile_only": "profile_instance",
+        "m1": "old_m1",
+        "m2": "old_m2",
+    }
+    result, stub = _call_overlay_handler(
+        overlay_names={"m1", "m2"},
+        namespace=namespace,
+        upserts={"m1": _upsert("m1")["spec"], "m3": _upsert("m3")["spec"]},
+        deletes=[],
+        replace=True,
+    )
+    assert result["status"] == "accepted"
+    assert stub._re_namespace == {
+        "profile_only": "profile_instance",
+        "m1": "instance(m1)",
+        "m3": "instance(m3)",
+    }
+    assert stub._config_service_overlay_names == {"m1", "m3"}
+
+
+def test_overlay_handler_incremental_respects_explicit_deletes_only():
+    namespace = {
+        "profile_only": "profile_instance",
+        "m1": "old_m1",
+        "m2": "old_m2",
+    }
+    result, stub = _call_overlay_handler(
+        overlay_names={"m1", "m2"},
+        namespace=namespace,
+        upserts={"m1": _upsert("m1")["spec"]},  # updated spec for m1
+        deletes=["m2"],                          # m2 explicitly removed
+        replace=False,
+    )
+    assert result["status"] == "accepted"
+    assert stub._re_namespace == {
+        "profile_only": "profile_instance",
+        "m1": "instance(m1)",
+    }
+    # incremental merges: m1 stays, m2 drops.
+    assert stub._config_service_overlay_names == {"m1"}
 

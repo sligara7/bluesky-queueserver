@@ -416,18 +416,24 @@ async def sync_devices_on_env_open(
 class StalenessPlan:
     """Actionable result of a pre-plan staleness check.
 
-    ``mode`` is ``"noop"`` (no changes since cursor), ``"incremental"`` (apply
-    the diff), or ``"full"`` (discard local overlay; replace with ``upserts``
-    which the fetch step populated from /devices/instantiation). ``upserts``
-    is keyed by device name → spec dict. ``deletes`` is the list of names
-    removed since the cursor. ``new_state`` is the cursor+epoch to commit
-    after the plan is applied.
+    ``replace_overlay`` is True when config-service reported a reset or a
+    service_epoch change — the worker's previous overlay is untrusted and
+    must be dropped wholesale; ``upserts`` then carries the full registry
+    (populated by ``fetch_staleness_plan`` with a follow-up
+    /devices/instantiation fetch). Otherwise the plan describes an
+    incremental diff: ``upserts`` + ``deletes`` are exactly what changed
+    since ``state.cursor``. ``new_state`` is the cursor+epoch to commit
+    after the worker accepts the overlay.
     """
 
-    mode: str
+    replace_overlay: bool
     upserts: Dict[str, Dict[str, Any]]
     deletes: List[str]
     new_state: ConfigServiceState
+
+    @property
+    def is_noop(self) -> bool:
+        return not self.replace_overlay and not self.upserts and not self.deletes
 
 
 def build_staleness_plan(
@@ -435,27 +441,23 @@ def build_staleness_plan(
 ) -> StalenessPlan:
     """Turn a /devices/changes response into an overlay-update plan.
 
-    Pure function; the async ``fetch_staleness_plan`` wraps it with the
-    full-refetch HTTP call when ``mode == "full"``.
+    Pure function. ``fetch_staleness_plan`` wraps it with the full-refetch
+    HTTP call when ``replace_overlay`` is True.
     """
     new_state = ConfigServiceState(
         cursor=int(response["current_version"]),
         epoch=str(response["service_epoch"]),
     )
     if response["reset_occurred"] or response["service_epoch"] != saved_epoch:
+        # upserts left empty here; fetch_staleness_plan fills it from
+        # /devices/instantiation so the caller sees the full registry.
         return StalenessPlan(
-            mode="full", upserts={}, deletes=[], new_state=new_state
-        )
-
-    changes = response["changes"]
-    if not changes:
-        return StalenessPlan(
-            mode="noop", upserts={}, deletes=[], new_state=new_state
+            replace_overlay=True, upserts={}, deletes=[], new_state=new_state
         )
 
     upserts: Dict[str, Dict[str, Any]] = {}
     deletes: List[str] = []
-    for change in changes:
+    for change in response["changes"]:
         name = change["device_name"]
         op = change["op"]
         if op == "upsert":
@@ -473,7 +475,10 @@ def build_staleness_plan(
             )
 
     return StalenessPlan(
-        mode="incremental", upserts=upserts, deletes=deletes, new_state=new_state
+        replace_overlay=False,
+        upserts=upserts,
+        deletes=deletes,
+        new_state=new_state,
     )
 
 
@@ -486,7 +491,7 @@ async def fetch_staleness_plan(
     replacement without a second round-trip."""
     response = await client.get_changes_since(state.cursor)
     plan = build_staleness_plan(response, state.epoch)
-    if plan.mode == "full":
+    if plan.replace_overlay:
         specs = await client.get_instantiation_specs()
         plan = dataclasses.replace(plan, upserts=specs)
     return plan

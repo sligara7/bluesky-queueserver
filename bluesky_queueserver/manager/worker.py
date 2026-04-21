@@ -159,6 +159,11 @@ class RunEngineWorker(Process):
         self._existing_plans_and_devices_changed = False
         self._existing_plans, self._existing_devices = {}, {}
         self._config_service_device_data: dict = {}
+        # Names this worker has overlaid from config-service specs. Used by the
+        # pre-plan staleness handler to compute implicit deletes on a full
+        # replace (reset_occurred / epoch mismatch) without accidentally
+        # touching profile-defined devices that were never overlaid.
+        self._config_service_overlay_names: set = set()
         self._allowed_plans, self._allowed_devices = {}, {}
 
         self._allowed_items_lock = None  # threading.Lock()
@@ -1204,16 +1209,18 @@ class RunEngineWorker(Process):
         msg_out = {"status": status, "err_msg": err_msg}
         return msg_out
 
-    def _command_update_device_overlay_handler(self, *, upserts, deletes):
-        """Apply an overlay diff to the RE namespace (Layer 2.7 staleness check).
+    def _command_update_device_overlay_handler(self, *, upserts, deletes, replace=False):
+        """Apply an overlay diff to the RE namespace (pre-plan staleness path).
 
-        ``upserts`` — ``{name: DeviceInstantiationSpec}`` dict; each spec is
-        instantiated via the existing Layer 2.6 helper and replaces any
-        same-named device in the namespace. ``deletes`` — list of names
-        removed entirely (matches the consume-mode policy: config-service is
-        authoritative, including for removals). Rejected unless the Run
-        Engine is idle. Hard-fail on any instantiation error — no silent
-        fallback to the previous overlay.
+        ``upserts`` — ``{name: DeviceInstantiationSpec}``; each spec is
+        instantiated and replaces any same-named device. ``deletes`` — names
+        removed entirely (config-service is authoritative, including for
+        removals). When ``replace`` is True, the caller is telling the worker
+        that the whole previous overlay is untrusted (config-service
+        reset_occurred or service_epoch changed): any name we previously
+        overlaid but that's absent from ``upserts`` is implicitly dropped
+        first, so stale objects from the old epoch don't linger. Rejected
+        unless the Run Engine is idle; hard-fail on instantiation error.
         """
         if self.re_state not in ("idle", None):
             return {
@@ -1228,7 +1235,12 @@ class RunEngineWorker(Process):
                 "status": "rejected",
                 "err_msg": "RE namespace is not initialized",
             }
+        implicit_deletes: set = set()
+        if replace:
+            implicit_deletes = self._config_service_overlay_names - set(upserts)
         try:
+            for name in implicit_deletes:
+                self._re_namespace.pop(name, None)
             for name, spec in upserts.items():
                 self._re_namespace[name] = instantiate_device_from_spec(spec)
             for name in deletes:
@@ -1237,10 +1249,20 @@ class RunEngineWorker(Process):
             logger.exception("config-service overlay update failed")
             return {"status": "rejected", "err_msg": str(ex)}
 
+        if replace:
+            self._config_service_overlay_names = set(upserts)
+        else:
+            self._config_service_overlay_names = (
+                self._config_service_overlay_names | set(upserts)
+            ) - set(deletes)
+
         logger.info(
-            "config-service overlay updated: %d upsert(s), %d delete(s)",
+            "config-service overlay updated: %d upsert(s), %d explicit delete(s), "
+            "%d implicit delete(s) (replace=%s)",
             len(upserts),
             len(deletes),
+            len(implicit_deletes),
+            replace,
         )
         return {"status": "accepted", "err_msg": ""}
 
@@ -1469,6 +1491,7 @@ class RunEngineWorker(Process):
             if device_specs:
                 for name, spec in device_specs.items():
                     self._re_namespace[name] = instantiate_device_from_spec(spec)
+                self._config_service_overlay_names = set(device_specs)
                 logger.info(
                     "config-service consume-mode: overlaid %d device(s) onto the profile namespace",
                     len(device_specs),
