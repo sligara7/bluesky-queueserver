@@ -380,6 +380,10 @@ class RunEngineManager(Process):
             self._config_dict.get("config_service")
         )
         self._config_service_state = ConfigServiceState()
+        # UID that identifies this manager as the lock owner in config-service.
+        # Stable for the manager's lifetime; used as item_id on every lock/unlock.
+        self._config_service_lock_item_id = f"env:{_generate_uid()}"
+        self._config_service_locked_devices: list = []
         self._existing_plans_uid = _generate_uid()
         self._existing_devices_uid = _generate_uid()
         self._allowed_plans, self._allowed_devices = {}, {}
@@ -709,6 +713,12 @@ class RunEngineManager(Process):
                 err_msg = "Failed to confirm closing of RE Worker thread"
             else:
                 await self._task_results.clear_running_tasks()
+                if self._config_service_settings.enabled:
+                    try:
+                        await self._unlock_config_service_devices()
+                    except Exception as ex:
+                        success = False
+                        err_msg = f"Worker closed but config-service unlock failed: {ex}"
         else:
             logger.error("Environment can not be closed: %s", err_msg)
 
@@ -754,6 +764,9 @@ class RunEngineManager(Process):
         self._manager_state = MState.IDLE
         self._environment_exists = False
         self._worker_state_info = None
+
+        if self._config_service_settings.enabled:
+            await self._unlock_config_service_devices(suppress_errors=True)
 
         # If a plan is running, it needs to be pushed back into the queue
         await self._plan_queue.set_processed_item_as_stopped(
@@ -1040,24 +1053,73 @@ class RunEngineManager(Process):
             self._status_update()
 
     async def _sync_config_service_on_env_open(self) -> None:
-        """Bootstrap the config-service registry if empty, then capture the
-        version cursor used by the pre-plan staleness check (Layer 2.7).
+        """Bootstrap the config-service registry if empty, capture the version
+        cursor used by the pre-plan staleness check (Layer 2.7), and lock the
+        environment's devices so other services are blocked from using them.
+
+        Locks are acquired only once per env, on first successful sync. If the
+        device list later changes via environment_update, the lock set does NOT
+        currently follow — see Layer 2.5 memory for the deferred relock story.
 
         Errors propagate to the caller so env-open fails loudly when
         config-service is enabled but something went wrong.
         """
         from .config_service import ConfigServiceClient, sync_devices_on_env_open
 
+        device_names = list(self._existing_devices.keys())
         async with ConfigServiceClient(self._config_service_settings) as client:
             state = await sync_devices_on_env_open(
                 client,
-                expected_device_names=list(self._existing_devices.keys()),
+                expected_device_names=device_names,
                 device_data=self._config_service_device_data,
             )
+            if not self._config_service_locked_devices and device_names:
+                await client.lock_devices(
+                    device_names,
+                    item_id=self._config_service_lock_item_id,
+                    plan_name="__environment__",
+                )
+                self._config_service_locked_devices = list(device_names)
+                logger.info(
+                    "config-service locked %d device(s) under item_id=%s",
+                    len(device_names), self._config_service_lock_item_id,
+                )
         self._config_service_state = state
         logger.info(
             "config-service cursor=%d epoch=%s", state.cursor, state.epoch
         )
+
+    async def _unlock_config_service_devices(self, *, suppress_errors: bool = False) -> None:
+        """Release any lock this manager holds in config-service.
+
+        With ``suppress_errors=True`` (used only from the env-destroy "last
+        resort" path), failures are logged at ERROR level instead of raised —
+        so that a dead config-service doesn't prevent queueserver from killing
+        a hung worker. This is the only exception to the hard-fail rule and
+        is scoped tightly to recovery.
+        """
+        if not self._config_service_settings.enabled:
+            return
+        devices = self._config_service_locked_devices
+        if not devices:
+            return
+
+        from .config_service import ConfigServiceClient
+
+        try:
+            async with ConfigServiceClient(self._config_service_settings) as client:
+                await client.unlock_devices(
+                    devices, item_id=self._config_service_lock_item_id
+                )
+        except Exception:
+            if not suppress_errors:
+                raise
+            logger.exception(
+                "config-service unlock failed during env-destroy; "
+                "locks for item_id=%s may persist until config-service restart",
+                self._config_service_lock_item_id,
+            )
+        self._config_service_locked_devices = []
 
     async def _load_task_results_from_worker(self):
         """
