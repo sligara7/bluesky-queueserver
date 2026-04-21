@@ -384,10 +384,11 @@ class RunEngineManager(Process):
         # Stable for the manager's lifetime; used as item_id on every lock/unlock.
         self._config_service_lock_item_id = f"env:{_generate_uid()}"
         self._config_service_locked_devices: list = []
-        # Registry snapshot fetched at the start of env-open when consume-mode
-        # is active. Populated only if config_service.enabled AND the registry
-        # is non-empty; stays None otherwise (legacy / bootstrap path).
-        self._config_service_prefetched_info: dict = {}
+        # Registry snapshot (``{name: spec}``) fetched at the start of env-open.
+        # ``None`` means "not fetched this env-cycle" and is distinct from the
+        # known-empty ``{}`` case — so a disabled/errored prefetch does not
+        # make the post-spawn sync skip its emptiness probe.
+        self._config_service_prefetched_info = None
         self._existing_plans_uid = _generate_uid()
         self._existing_devices_uid = _generate_uid()
         self._allowed_plans, self._allowed_devices = {}, {}
@@ -611,38 +612,24 @@ class RunEngineManager(Process):
         """Fetch the config-service registry before spawning the worker.
 
         Returns the ``{name: spec}`` dict that should be forwarded to the
-        worker (empty dict if consume-mode does not apply). Populates
-        ``self._config_service_prefetched_info`` so the post-env-open sync
-        can reuse it and skip the redundant ``is_registry_empty`` probe.
+        worker (empty dict if consume-mode does not apply). Stores the same
+        dict on ``self._config_service_prefetched_info`` so the post-spawn
+        sync can skip its redundant emptiness probe.
 
         Any failure propagates — env-open fails loudly when config-service
         is enabled (see feedback_backwards_compat memory).
         """
-        self._config_service_prefetched_info = {}
+        self._config_service_prefetched_info = None
         if not self._config_service_settings.enabled:
             return {}
 
         from .config_service import ConfigServiceClient
 
         async with ConfigServiceClient(self._config_service_settings) as client:
-            info, specs = await asyncio.gather(
-                client.get_devices_info(),
-                client.get_instantiation_specs(),
-            )
-        if not isinstance(info, dict):
-            raise RuntimeError(
-                f"config-service /devices-info returned non-dict body: {type(info).__name__}"
-            )
-        self._config_service_prefetched_info = info
-        if not info:
-            # Registry empty → legacy bootstrap path; do not inject specs.
+            specs = await client.get_instantiation_specs()
+        self._config_service_prefetched_info = specs
+        if not specs:
             return {}
-        missing_specs = [name for name in info if name not in specs]
-        if missing_specs:
-            raise RuntimeError(
-                "config-service registry is inconsistent: devices present in "
-                f"/devices-info are missing from /devices/instantiation: {sorted(missing_specs)!r}"
-            )
         logger.info(
             "config-service consume-mode: prefetched %d device spec(s) for worker injection",
             len(specs),

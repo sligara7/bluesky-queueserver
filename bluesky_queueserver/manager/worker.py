@@ -1419,21 +1419,16 @@ class RunEngineWorker(Process):
                     nspace=self._re_namespace,
                 )
 
-            # Layer 2.6 — consume-mode overlay. When the manager prefetched
-            # instantiation specs from bluesky-configuration-service, replace
-            # any profile-defined device of the same name with a registry-
-            # sourced instance so all services agree on device definitions.
-            # Plans continue to come from the profile. Hard-fail on any
-            # instantiation error (no silent fallback to profile devices).
+            # Overlay config-service-sourced devices so all services agree
+            # on device definitions. Hard-fail on instantiation error —
+            # no silent fallback to the profile-defined device.
             device_specs = self._config_dict.get("config_service_device_specs") or {}
             if device_specs:
-                overlay_count = 0
                 for name, spec in device_specs.items():
                     self._re_namespace[name] = instantiate_device_from_spec(spec)
-                    overlay_count += 1
                 logger.info(
                     "config-service consume-mode: overlaid %d device(s) onto the profile namespace",
-                    overlay_count,
+                    len(device_specs),
                 )
 
             # if "RE" not in self._re_namespace:
