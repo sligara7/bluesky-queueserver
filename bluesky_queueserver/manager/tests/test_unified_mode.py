@@ -69,44 +69,13 @@ def _started_manager(params):
             re.kill_manager()
 
 
-def test_http_port_activates_unified_mode(monkeypatch):
-    """--http-port alone is enough to enable unified mode; /api/status
-    round-trips through HTTP → loopback 0MQ → manager handler."""
-    monkeypatch.setenv("QSERVER_HTTP_SERVER_ALLOW_ANONYMOUS_ACCESS", "1")
-    http_port = _free_tcp_port()
-
-    with _started_manager(["--http-port", str(http_port)]):
-        response = _poll_http(f"http://127.0.0.1:{http_port}/api/status", timeout=15.0)
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["manager_state"] == "idle"
-    assert body["worker_environment_exists"] is False
-
-
-def test_no_http_port_leaves_legacy_behavior():
-    """Absent any HTTP flag, the manager must not bind an HTTP port — the
-    split-process deployment is byte-identical to today."""
-    http_port = _free_tcp_port()
-
-    with _started_manager(params=None):
-        with pytest.raises((httpx.ConnectError, httpx.ConnectTimeout)):
-            httpx.get(f"http://127.0.0.1:{http_port}/api/status", timeout=1.0)
-
-
-# ----- U2: in-process loopback --------------------------------------------
-
-
-def test_unified_mode_injects_in_process_client(monkeypatch, tmp_path):
-    """Multiple endpoints round-trip through the in-process dispatcher and
-    stderr shows the U2 injection log at startup (no 0MQ-client fallback).
-
-    Only ``/api/status`` and ``/api/ping`` are exercised here because
-    anonymous access is limited to the ``read:status`` scope — hitting
-    ``/api/queue/get`` would require minting an API key, which is out
-    of scope for this smoke test. Both endpoints funnel through
-    ``send_request(method=...)`` so they exercise the override twice
-    with different method names."""
+def test_http_port_activates_unified_mode_with_inprocess_dispatch(monkeypatch, tmp_path):
+    """--http-port alone enables unified mode; /api/status and /api/ping
+    round-trip through HTTP → manager._dispatch_command → handler; and
+    stderr confirms the in-process client was injected (not a ZMQ
+    fallback). Only status/ping are exercised because anonymous access
+    is scoped to read:status — other endpoints would require minting
+    an API key."""
     monkeypatch.setenv("QSERVER_HTTP_SERVER_ALLOW_ANONYMOUS_ACCESS", "1")
     http_port = _free_tcp_port()
 
@@ -121,14 +90,14 @@ def test_unified_mode_injects_in_process_client(monkeypatch, tmp_path):
                 raise TimeoutError("Timeout: RE Manager failed to start.")
 
             base = f"http://127.0.0.1:{http_port}/api"
-            _poll_http(f"{base}/status", timeout=15.0)  # wait for uvicorn
+            _poll_http(f"{base}/status", timeout=15.0)
 
             for path in ("/status", "/ping"):
                 response = httpx.get(f"{base}{path}", timeout=5.0)
                 assert response.status_code == 200, (path, response.text)
                 body = response.json()
-                assert isinstance(body, dict) and body, (path, body)
                 assert body.get("manager_state") == "idle", (path, body)
+                assert body.get("worker_environment_exists") is False, (path, body)
         finally:
             if not failed_to_start:
                 re.stop_manager()
@@ -140,38 +109,53 @@ def test_unified_mode_injects_in_process_client(monkeypatch, tmp_path):
         "unified mode did not wire the in-process client; stderr tail:\n"
         + "\n".join(stderr.splitlines()[-40:])
     )
-    # Conversely, the split-process log line must NOT have fired —
-    # it would indicate the httpserver fell back to building a fresh
-    # ZMQ client instead of using the injected in-process one.
+    # The ZMQ-fallback log must NOT have fired — its presence would mean
+    # httpserver ignored the injected RM and built a fresh client.
     assert "Connecting to RE Manager" not in stderr, (
         "in-process client was injected but httpserver still built a ZMQ client"
     )
 
 
+def test_no_http_port_leaves_legacy_behavior():
+    """Absent any HTTP flag, the manager must not bind an HTTP port — the
+    split-process deployment is byte-identical to today."""
+    http_port = _free_tcp_port()
+
+    with _started_manager(params=None):
+        with pytest.raises((httpx.ConnectError, httpx.ConnectTimeout)):
+            httpx.get(f"http://127.0.0.1:{http_port}/api/status", timeout=1.0)
+
+
 class _FakeManager:
-    """Minimal stand-in for the manager that InProcessREManagerAPI needs."""
+    """Minimal stand-in for RunEngineManager with a _dispatch_command that
+    mirrors the real one (duplicated rather than imported to keep this
+    unit test free of manager.py's multiprocessing-heavy import chain)."""
 
     def __init__(self):
-        self.calls = []
-
         async def status_handler(manager, params):
             return {"success": True, "msg": "", "manager_state": "idle", "params": params}
 
         async def failing_handler(manager, params):
             raise RuntimeError("boom")
 
-        self._command_handlers = {
-            "status": status_handler,
-            "boom": failing_handler,
-        }
+        self._command_handlers = {"status": status_handler, "boom": failing_handler}
+
+    async def _dispatch_command(self, method, params):
+        try:
+            handler = self._command_handlers[method]
+        except KeyError:
+            return {"success": False, "msg": f"Unknown method {method!r}"}
+        try:
+            return await handler(self, params)
+        except Exception as ex:
+            return {"success": False, "msg": str(ex)}
 
 
 @pytest.mark.asyncio
-async def test_inprocess_client_dispatches_into_command_handlers():
+async def test_inprocess_client_delegates_to_dispatch_command():
     manager = _FakeManager()
     rm = InProcessREManagerAPI(
         manager=manager,
-        zmq_control_addr="tcp://127.0.0.1:1",  # arbitrary; never connected
         zmq_info_addr="tcp://127.0.0.1:2",
         zmq_encoding="json",
         request_fail_exceptions=False,
@@ -180,7 +164,6 @@ async def test_inprocess_client_dispatches_into_command_handlers():
     response = await rm.send_request(method="status", params={"k": "v"})
     assert response["success"] is True
     assert response["params"] == {"k": "v"}
-    assert response["manager_state"] == "idle"
     assert rm._inprocess_request_count == 1
 
     unknown = await rm.send_request(method="does_not_exist", params={})
@@ -188,8 +171,6 @@ async def test_inprocess_client_dispatches_into_command_handlers():
     assert "Unknown method" in unknown["msg"]
     assert rm._inprocess_request_count == 2
 
-    # Handler exceptions are surfaced as failed responses, not raised past
-    # send_request — matches _zmq_execute's catch-all.
     failed = await rm.send_request(method="boom", params={})
     assert failed["success"] is False
     assert failed["msg"] == "boom"

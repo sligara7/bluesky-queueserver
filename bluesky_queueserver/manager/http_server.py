@@ -65,63 +65,54 @@ def _bind_addr_to_connect_addr(bind_addr: str) -> str:
     return f"tcp://{host}:{match.group(2)}"
 
 
-class InProcessREManagerAPI:
-    """REManagerAPI subclass that short-circuits the 0MQ CONTROL round-trip.
+_in_process_rm_class: Any = None
 
-    In unified mode (U1) the httpserver's FastAPI handlers reach the
-    manager by msgpack-encoding a request, sending it over 0MQ loopback
-    to the same process, and decoding the reply. Phase U2 eliminates
-    that hop: every public ``REManagerAPI.<method>()`` call funnels
-    through ``send_request(method=..., params=...)``; we override that
-    one seam to dispatch directly into ``manager._command_handlers``
-    and await the handler coroutine. All ~56 public methods then work
-    without reimplementation.
 
-    The 0MQ CONTROL socket stays bound on the manager side so external
-    ``qserver``-CLI clients keep working per the backwards-compat
-    contract. The INFO/PUB channel is untouched — console-output
-    streaming still subscribes via the parent class's monitor machinery.
+def _build_in_process_rm_class():
+    """Build the REManagerAPI subclass that short-circuits 0MQ CONTROL.
 
-    ``_inprocess_request_count`` is exposed for integration tests to
-    assert the loopback bypass actually fires per HTTP call.
+    Lazy: defers ``bluesky_queueserver_api`` import until unified mode
+    actually starts, keeping it off the legacy-path import graph.
+    Overriding ``send_request`` catches all ~56 public methods (they all
+    funnel through that one seam); overriding ``_create_client`` stubs
+    out the otherwise-unused 0MQ CONTROL REQ socket so we don't hold a
+    file descriptor and a zmq context to ourselves.
     """
+    from bluesky_queueserver_api.zmq.aio import REManagerAPI
 
-    # Class is defined at module level but we construct it lazily inside
-    # CoHostedHttpServer.start to keep bluesky_queueserver_api off the
-    # module's import graph when HTTP is disabled.
-    _cls_cache: Any = None
+    class _StubZMQClient:
+        # send_message is never called on the in-process path; only close()
+        # is invoked, by REManagerAPI.close() in the shutdown handler.
+        def close(self):
+            pass
 
-    def __new__(cls, *args, **kwargs):
-        if cls._cls_cache is None:
-            from bluesky_queueserver_api.zmq.aio import REManagerAPI as _RM
+    class _InProcessRM(REManagerAPI):
+        def __init__(self, *, manager, **rm_kwargs):
+            super().__init__(**rm_kwargs)
+            self._manager = manager
+            self._inprocess_request_count = 0
 
-            class _InProcessRM(_RM):
-                def __init__(self, *, manager, **rm_kwargs):
-                    super().__init__(**rm_kwargs)
-                    self._manager = manager
-                    self._inprocess_request_count = 0
+        def _create_client(self, **_):
+            return _StubZMQClient()
 
-                async def send_request(self, *, method, params=None):
-                    self._inprocess_request_count += 1
-                    handler = self._manager._command_handlers.get(method)
-                    if handler is None:
-                        response = {
-                            "success": False,
-                            "msg": f"Unknown method {method!r}",
-                        }
-                    else:
-                        try:
-                            response = await handler(self._manager, params or {})
-                        except Exception as ex:  # noqa: BLE001
-                            response = {"success": False, "msg": str(ex)}
-                    self._check_response(
-                        request={"method": method, "params": params},
-                        response=response,
-                    )
-                    return response
+        async def send_request(self, *, method, params=None):
+            self._inprocess_request_count += 1
+            response = await self._manager._dispatch_command(method, params or {})
+            self._check_response(
+                request={"method": method, "params": params},
+                response=response,
+            )
+            return response
 
-            cls._cls_cache = _InProcessRM
-        return cls._cls_cache(*args, **kwargs)
+    return _InProcessRM
+
+
+def InProcessREManagerAPI(*, manager, **rm_kwargs):
+    """Construct the in-process REManagerAPI subclass (cached across calls)."""
+    global _in_process_rm_class
+    if _in_process_rm_class is None:
+        _in_process_rm_class = _build_in_process_rm_class()
+    return _in_process_rm_class(manager=manager, **rm_kwargs)
 
 
 class CoHostedHttpServer:
@@ -150,7 +141,6 @@ class CoHostedHttpServer:
         self._manager_zmq_connect_addr = _bind_addr_to_connect_addr(manager_zmq_bind_addr)
         self._server: Any = None  # uvicorn.Server
         self._task: Optional[asyncio.Task] = None
-        self._rm_client: Any = None  # InProcessREManagerAPI — exposed for tests
 
     async def start(self) -> None:
         import uvicorn
@@ -169,13 +159,12 @@ class CoHostedHttpServer:
         zmq_conf = server_settings.setdefault("qserver_zmq_configuration", {})
         zmq_conf.setdefault("control_address", self._manager_zmq_connect_addr)
 
-        # In-process REManagerAPI — dispatches into manager._command_handlers
-        # directly; the 0MQ CONTROL address above is still wired so the
-        # underlying client can initialize console / system-info monitors
-        # against the INFO/PUB channel, but the CONTROL hot path is bypassed.
-        self._rm_client = InProcessREManagerAPI(
+        # In-process RM dispatches into manager._dispatch_command directly.
+        # The 0MQ INFO/PUB channel is still configured so the parent class's
+        # console / system-info monitors keep working; the CONTROL REQ
+        # client is replaced by a no-op stub via _create_client override.
+        server_settings["rm_client"] = InProcessREManagerAPI(
             manager=self._manager,
-            zmq_control_addr=self._manager_zmq_connect_addr,
             zmq_info_addr=zmq_conf.get("info_address"),
             zmq_encoding=zmq_conf.get("encoding"),
             zmq_public_key=zmq_conf.get("public_key"),
@@ -183,7 +172,6 @@ class CoHostedHttpServer:
             status_expiration_period=0.4,
             console_monitor_max_lines=2000,
         )
-        build_kwargs["rm_client"] = self._rm_client
 
         app = build_app(**build_kwargs)
 

@@ -4005,6 +4005,31 @@ class RunEngineManager(Process):
 
         return {"success": success, "msg": msg}
 
+    async def _dispatch_command(self, method, params):
+        """Look up and run a registered command handler.
+
+        Shared by the 0MQ dispatch loop (``_zmq_execute``) and the in-
+        process loopback used by the co-hosted HTTP server in unified
+        mode (``InProcessREManagerAPI.send_request``) so both paths
+        produce identical response shapes for unknown / unimplemented
+        / raising handlers. Handler success/failure is carried inside
+        the returned dict — exceptions are surfaced as ``success: False``
+        responses, not raised past this method.
+        """
+        try:
+            handler = self._command_handlers[method]
+        except KeyError:
+            return {"success": False, "msg": f"Unknown method {method!r}"}
+        try:
+            return await handler(self, params)
+        except AttributeError:
+            return {
+                "success": False,
+                "msg": f"Handler for the command {method!r} is not implemented",
+            }
+        except Exception as ex:
+            return {"success": False, "msg": str(ex)}
+
     async def _zmq_execute(self, msg):
         try:
             if isinstance(msg, str):
@@ -4013,27 +4038,15 @@ class RunEngineManager(Process):
                 raise Exception(f"Incorrect request type: {type(msg)}. Dictionary is expected")
             if "method" not in msg:
                 raise Exception(f"Invalid request format: method is not specified: {msg!r}")
-            # Check that the request contains no extra keys
             allowed_keys = ("method", "params")
             extra_keys = [_ for _ in msg.keys() if _ not in allowed_keys]
             if extra_keys:
                 raise Exception(f"Request contains unexpected keys {extra_keys}. Allowed keys: {allowed_keys}")
-
-            method = msg["method"]  # Required
-            params = msg.get("params", {})  # Optional
-
-            handler = self._command_handlers[method]
-            result = await handler(self, params)
-        except KeyError:
-            result = {"success": False, "msg": f"Unknown method {method!r}"}
-        except AttributeError:
-            result = {
-                "success": False,
-                "msg": f"Handler for the command {method!r} is not implemented",
-            }
+            method = msg["method"]
+            params = msg.get("params", {})
         except Exception as ex:
-            result = {"success": False, "msg": str(ex)}
-        return result
+            return {"success": False, "msg": str(ex)}
+        return await self._dispatch_command(method, params)
 
     # ======================================================================
     #          Functions that support communication via 0MQ
