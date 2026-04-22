@@ -4232,6 +4232,7 @@ class RunEngineManager(Process):
 
             self._http_server = CoHostedHttpServer(
                 self._http_server_settings,
+                manager=self,
                 manager_zmq_bind_addr=self._zmq_ip_server,
             )
             await self._http_server.start()

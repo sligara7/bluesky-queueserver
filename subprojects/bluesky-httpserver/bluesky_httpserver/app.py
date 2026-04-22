@@ -111,7 +111,14 @@ def add_router(app, *, module_and_router_name):
         raise ImportError(f"Failed to import router {module_and_router_name!r}: {ex}") from ex
 
 
-def build_app(authentication=None, api_access=None, resource_access=None, server_settings=None):
+def build_app(
+    authentication=None,
+    api_access=None,
+    resource_access=None,
+    server_settings=None,
+    *,
+    rm_client=None,
+):
     """
     Build application
 
@@ -121,6 +128,12 @@ def build_app(authentication=None, api_access=None, resource_access=None, server
         Dict of authentication configuration.
     server_settings: dict, optional
         Dict of other server configuration.
+    rm_client: REManagerAPI subclass instance, optional
+        Pre-constructed REManagerAPI to use instead of building a fresh
+        ZMQ client from 0MQ addresses. Lets a co-hosting caller inject an
+        in-process implementation that bypasses the 0MQ CONTROL round-trip.
+        When None, the startup handler constructs the standard ZMQ client
+        using server_settings["qserver_zmq_configuration"] and env vars.
     """
     authentication = authentication or {}
     authentication_providers = authentication.get("providers", [])
@@ -324,20 +337,27 @@ def build_app(authentication=None, api_access=None, resource_access=None, server
             except Exception as ex:
                 raise ValueError(f"ZMQ public key is improperly formatted: {ex}")
 
-        logger.info(
-            f"Connecting to RE Manager: \nControl 0MQ socket address: {zmq_control_addr}\n"
-            f"Information 0MQ socket address: {zmq_info_addr}. Encoding: {zmq_encoding!r}\n"
-        )
-
-        RM = REManagerAPI(
-            zmq_control_addr=zmq_control_addr,
-            zmq_info_addr=zmq_info_addr,
-            zmq_encoding=zmq_encoding,
-            zmq_public_key=zmq_public_key,
-            request_fail_exceptions=False,
-            status_expiration_period=0.4,  # Make it smaller than default
-            console_monitor_max_lines=2000,
-        )
+        if rm_client is not None:
+            logger.info(
+                "Using injected REManagerAPI client (%s) — "
+                "0MQ CONTROL round-trip bypassed.",
+                type(rm_client).__name__,
+            )
+            RM = rm_client
+        else:
+            logger.info(
+                f"Connecting to RE Manager: \nControl 0MQ socket address: {zmq_control_addr}\n"
+                f"Information 0MQ socket address: {zmq_info_addr}. Encoding: {zmq_encoding!r}\n"
+            )
+            RM = REManagerAPI(
+                zmq_control_addr=zmq_control_addr,
+                zmq_info_addr=zmq_info_addr,
+                zmq_encoding=zmq_encoding,
+                zmq_public_key=zmq_public_key,
+                request_fail_exceptions=False,
+                status_expiration_period=0.4,  # Make it smaller than default
+                console_monitor_max_lines=2000,
+            )
         SR.set_RM(RM)
 
         login_data = get_default_login_data()
