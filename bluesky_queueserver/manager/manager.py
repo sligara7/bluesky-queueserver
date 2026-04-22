@@ -397,6 +397,17 @@ class RunEngineManager(Process):
         # parent Process before the manager's loop starts. Closed in the
         # shutdown path of ``zmq_server_comm``.
         self._config_service_client = None
+
+        from .http_server import HttpServerSettings
+
+        self._http_server_settings = HttpServerSettings.from_config_dict(
+            self._config_dict.get("http_server")
+        )
+        # CoHostedHttpServer instance — constructed lazily in zmq_server_comm
+        # so that uvicorn / bluesky_httpserver imports happen on the manager's
+        # event loop, not in the parent Process before the loop starts.
+        self._http_server = None
+
         self._existing_plans_uid = _generate_uid()
         self._existing_devices_uid = _generate_uid()
         self._allowed_plans, self._allowed_devices = {}, {}
@@ -4216,6 +4227,15 @@ class RunEngineManager(Process):
         self._zmq_socket.bind(self._zmq_ip_server)
         logger.info("ZeroMQ server is waiting on %s", str(self._zmq_ip_server))
 
+        if self._http_server_settings.enabled:
+            from .http_server import CoHostedHttpServer
+
+            self._http_server = CoHostedHttpServer(
+                self._http_server_settings,
+                manager_zmq_bind_addr=self._zmq_ip_server,
+            )
+            await self._http_server.start()
+
         if self._manager_state == MState.INITIALIZING:
             self._manager_state = MState.IDLE
 
@@ -4242,6 +4262,12 @@ class RunEngineManager(Process):
                 #   the confirmation message is delivered via ZMQ, causing tests to fail with
                 #   substantial probability.
                 await asyncio.sleep(0.1)
+
+                # Stop HTTP first so in-flight HTTP->0MQ round-trips don't see
+                # timeouts against a closed 0MQ socket further down this block.
+                if self._http_server is not None:
+                    await self._http_server.stop()
+                    self._http_server = None
 
                 # This should stop RE Worker if no plan is currently running
                 success, _ = await self._stop_re_worker_task()  # Quitting RE Manager

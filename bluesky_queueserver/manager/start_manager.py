@@ -667,6 +667,38 @@ def start_manager():
         "(default: %(default)s)",
     )
 
+    group_http = parser.add_argument_group(
+        "HTTP server (co-hosted unified mode)",
+        "When an HTTP port is configured, RE Manager additionally serves the bluesky-httpserver\n"
+        "REST/WS API from this same process (in addition to the 0MQ server). Unified mode is\n"
+        "opt-in — absent any HTTP flag (and absent http_server.enabled in YAML), behavior is\n"
+        "byte-identical to the legacy split-process deployment.",
+    )
+    group_http.add_argument(
+        "--http-port",
+        dest="http_server_port",
+        type=int,
+        default=None,
+        help="Port for the co-hosted HTTP server. Specifying this flag is sufficient to enable "
+        "unified mode (no --http-config required; httpserver uses its env-var / default config).",
+    )
+    group_http.add_argument(
+        "--http-host",
+        dest="http_server_host",
+        type=str,
+        default=None,
+        help="Host/interface for the co-hosted HTTP server (default: 0.0.0.0).",
+    )
+    group_http.add_argument(
+        "--http-config",
+        dest="http_server_config_path",
+        type=str,
+        default=None,
+        help="Path to a bluesky-httpserver YAML config file. Enables unified mode and loads the "
+        "file verbatim via bluesky_httpserver.config.parse_configs. If --http-port is also "
+        "given it overrides the port from this file.",
+    )
+
     group_verbosity = parser.add_argument_group(
         "Logging verbosity settings",
         "The default logging settings (loglevel=INFO) provide optimal amount of data to monitor\n"
@@ -872,6 +904,7 @@ def start_manager():
     config_manager["lock_key_emergency"] = settings.emergency_lock_key
 
     config_manager["config_service"] = settings.config_service
+    config_manager["http_server"] = settings.http_server
 
     wp = WatchdogProcess(
         config_worker=config_worker, config_manager=config_manager, msg_queue=msg_queue, log_level=log_level

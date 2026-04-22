@@ -375,3 +375,18 @@ properties:
           minimum: 0
       service_name:
         type: string
+
+  http_server:
+    type: object
+    additionalProperties: false
+    properties:
+      enabled:
+        type: boolean
+      host:
+        type: string
+      port:
+        type: integer
+        minimum: 1
+        maximum: 65535
+      config_path:
+        type: string

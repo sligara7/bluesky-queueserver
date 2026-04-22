@@ -214,6 +214,10 @@ _key_mapping = {
     "user_group_permissions_reload": "operation/user_group_permissions_reload",
     "emergency_lock_key": "operation/emergency_lock_key",
     "config_service": "config_service",
+    "http_server_enabled": "http_server/enabled",
+    "http_server_host": "http_server/host",
+    "http_server_port": "http_server/port",
+    "http_server_config_path": "http_server/config_path",
 }
 
 
@@ -574,6 +578,33 @@ class Settings:
         # Raw config_service section: parsed into ConfigServiceSettings later
         # in the manager process (keeps httpx off the legacy-path import graph).
         self._settings["config_service"] = self._get_value_from_config("config_service") or {}
+
+        # http_server: opt-in, parsed into HttpServerSettings in the manager
+        # process. Disabled by default — presence of --http-port (or --http-
+        # config, or http_server.enabled in YAML) is what flips unified mode on.
+        http_port_cli = self._args_existing("http_server_port")
+        http_config_path_cli = self._args_existing("http_server_config_path")
+        http_enabled = self._get_param_boolean(
+            value_default=False,
+            value_config=self._get_value_from_config("http_server_enabled"),
+        )
+        if http_port_cli is not None or http_config_path_cli is not None:
+            http_enabled = True
+        self._settings["http_server"] = {
+            "enabled": bool(http_enabled),
+            "host": self._get_param(
+                value_config=self._get_value_from_config("http_server_host"),
+                value_cli=self._args_existing("http_server_host"),
+            ),
+            "port": self._get_param(
+                value_config=self._get_value_from_config("http_server_port"),
+                value_cli=http_port_cli,
+            ),
+            "config_path": self._get_param(
+                value_config=self._get_value_from_config("http_server_config_path"),
+                value_cli=http_config_path_cli,
+            ),
+        }
 
     def __getattr__(self, attr):
         if attr in self._settings:
