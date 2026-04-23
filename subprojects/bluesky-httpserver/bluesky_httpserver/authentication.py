@@ -569,6 +569,12 @@ base_authentication_router = APIRouter()
 @base_authentication_router.get(
     "/principal",
     response_model=schemas.Principal,
+    summary="List all Principals",
+    description=(
+        "Return a list of all Principals (users and services) known to the server. "
+        "Admin-only. Required scope: `admin:read:principals`."
+    ),
+    tags=["Auth"],
 )
 def principal_list(
     request: Request,
@@ -592,6 +598,12 @@ def principal_list(
 @base_authentication_router.get(
     "/principal/{uuid}",
     response_model=schemas.Principal,
+    summary="Get one Principal by UUID",
+    description=(
+        "Return information about a single Principal (user or service). Admin-only. "
+        "Required scope: `admin:read:principals`."
+    ),
+    tags=["Auth"],
 )
 def principal(
     request: Request,
@@ -612,6 +624,13 @@ def principal(
 @base_authentication_router.post(
     "/principal/{uuid}/apikey",
     response_model=schemas.APIKeyWithSecret,
+    summary="Generate an API key for a Principal (admin)",
+    description=(
+        "Mint an API key on behalf of the given Principal. Admin-only; most users should "
+        "call `POST /api/auth/apikey` instead to mint one for themselves. "
+        "Required scope: `admin:apikeys`."
+    ),
+    tags=["Auth"],
 )
 def apikey_for_principal(
     request: Request,
@@ -636,7 +655,16 @@ def apikey_for_principal(
         return generate_apikey(db, principal, apikey_params, request, principal_scopes, source_api_key_scopes)
 
 
-@base_authentication_router.post("/session/refresh", response_model=schemas.AccessAndRefreshTokens)
+@base_authentication_router.post(
+    "/session/refresh",
+    response_model=schemas.AccessAndRefreshTokens,
+    summary="Refresh an access token",
+    description=(
+        "Exchange a valid refresh token for a fresh access token and refresh token. "
+        "Used by long-running clients to keep a session alive without re-authenticating."
+    ),
+    tags=["Auth"],
+)
 def refresh_session(
     request: Request,
     refresh_token: schemas.RefreshToken,
@@ -650,7 +678,16 @@ def refresh_session(
         return new_tokens
 
 
-@base_authentication_router.delete("/session/revoke/{session_id}")
+@base_authentication_router.delete(
+    "/session/revoke/{session_id}",
+    summary="Revoke a session",
+    description=(
+        "Mark the given session as revoked so it can no longer be refreshed. A user may "
+        "revoke their own sessions; revoking another user's session is not currently "
+        "supported."
+    ),
+    tags=["Auth"],
+)
 def revoke_session(
     session_id: str,  # from path parameter
     request: Request,
@@ -735,6 +772,12 @@ def slide_session(refresh_token, settings, db, api_access_manager):
 @base_authentication_router.post(
     "/apikey",
     response_model=schemas.APIKeyWithSecret,
+    summary="Generate an API key for the current user",
+    description=(
+        "Mint a new API key for the currently-authenticated user or service. The returned "
+        "secret is shown only once. Required scope: `user:apikeys`."
+    ),
+    tags=["Auth"],
 )
 def new_apikey(
     request: Request,
@@ -765,7 +808,16 @@ def new_apikey(
         return apikey
 
 
-@base_authentication_router.get("/apikey", response_model=schemas.APIKey)
+@base_authentication_router.get(
+    "/apikey",
+    response_model=schemas.APIKey,
+    summary="Get info about the current request's API key",
+    description=(
+        "Return metadata (UUID, scopes, expiration) for the API key used to authenticate "
+        "this request. Useful for looking up the API key identifier given the secret."
+    ),
+    tags=["Auth"],
+)
 def current_apikey_info(
     request: Request,
     api_key: str = Depends(get_api_key),
@@ -792,7 +844,15 @@ def current_apikey_info(
         return json_or_msgpack(request, schemas.APIKey.from_orm(api_key_orm).dict())
 
 
-@base_authentication_router.delete("/apikey")
+@base_authentication_router.delete(
+    "/apikey",
+    summary="Revoke an API key of the current user",
+    description=(
+        "Revoke an API key belonging to the currently-authenticated user or service, "
+        "identified by its `first_eight` characters. Required scope: `user:apikeys`."
+    ),
+    tags=["Auth"],
+)
 def revoke_apikey(
     request: Request,
     first_eight: str,
@@ -821,6 +881,12 @@ def revoke_apikey(
 @base_authentication_router.get(
     "/whoami",
     response_model=schemas.Principal,
+    summary="Get the current Principal",
+    description=(
+        "Return information about the currently-authenticated user or service, or `null` "
+        "for anonymous/public requests."
+    ),
+    tags=["Auth"],
 )
 def whoami(
     request: Request,
@@ -844,6 +910,12 @@ def whoami(
 @base_authentication_router.get(
     "/scopes",
     response_model=schemas.Principal,
+    summary="Get the current Principal's roles and scopes",
+    description=(
+        "Return the roles and scopes resolved for the currently-authenticated user or "
+        "service. Clients use this to decide which UI actions to expose."
+    ),
+    tags=["Auth"],
 )
 def scopes(
     request: Request,
@@ -853,7 +925,15 @@ def scopes(
     return json_or_msgpack(request, schemas.AllowedScopes(roles=roles, scopes=scopes).dict())
 
 
-@base_authentication_router.post("/logout")
+@base_authentication_router.post(
+    "/logout",
+    summary="Log out the current session",
+    description=(
+        "Clear the API-key and CSRF cookies set by browser-based flows. Token-based clients "
+        "can simply discard their credentials."
+    ),
+    tags=["Auth"],
+)
 async def logout(
     request: Request,
     response: Response,

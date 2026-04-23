@@ -13,12 +13,12 @@ from bluesky_queueserver.manager.comms import validate_zmq_key
 from bluesky_queueserver_api.zmq.aio import REManagerAPI
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
 
 from .authentication import Mode
 from .console_output import CollectPublishedConsoleOutput, ConsoleOutputStream, SystemInfoStream
 from .core import PatchedStreamingResponse
 from .database.core import purge_expired
+from .openapi_config import custom_openapi
 from .resources import SERVER_RESOURCES as SR
 from .routers import core_api
 from .settings import get_settings
@@ -45,35 +45,6 @@ SENSITIVE_COOKIES = {
 }
 CSRF_HEADER_NAME = "x-csrf"
 CSRF_QUERY_PARAMETER = "csrf"
-
-
-def custom_openapi(app):
-    """
-    The app's openapi method will be monkey-patched with this.
-
-    This is the approach the documentation recommends.
-
-    https://fastapi.tiangolo.com/advanced/extending-openapi/
-    """
-    from . import __version__
-
-    if app.openapi_schema:
-        return app.openapi_schema
-    # Customize heading.
-    openapi_schema = get_openapi(
-        title="Bluesky HTTP Server",
-        version=__version__,
-        description="Control Experiments using Bluesky Queue Server",
-        routes=app.routes,
-    )
-    # print(f"openapi_schema = {pprint.pformat(openapi_schema['components'])}")  ##
-    # Insert refreshUrl.
-    if "securitySchemes" in openapi_schema["components"]:  # False when calling /docs
-        openapi_schema["components"]["securitySchemes"]["OAuth2PasswordBearer"]["flows"]["password"][
-            "refreshUrl"
-        ] = "token/refresh"
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
 
 
 def add_router(app, *, module_and_router_name):
@@ -187,16 +158,35 @@ def build_app(authentication=None, api_access=None, resource_access=None, server
             authenticator = spec["authenticator"]
             mode = authenticator.mode
             if mode == Mode.password:
-                authentication_router.post(f"/provider/{provider}/token")(
-                    build_handle_credentials_route(authenticator, provider)
-                )
+                authentication_router.post(
+                    f"/provider/{provider}/token",
+                    summary=f"Exchange username+password for tokens ({provider})",
+                    description=(
+                        f"OAuth2 password-flow token endpoint for the `{provider}` "
+                        "authenticator. Form fields: `username`, `password`. Returns "
+                        "access + refresh tokens."
+                    ),
+                    tags=["Auth"],
+                )(build_handle_credentials_route(authenticator, provider))
             elif mode == Mode.external:
-                authentication_router.get(f"/provider/{provider}/code")(
-                    build_auth_code_route(authenticator, provider)
+                auth_code_summary = f"Exchange an external-identity callback for a refresh token ({provider})"
+                auth_code_description = (
+                    f"External-identity auth-code endpoint for the `{provider}` authenticator. "
+                    "Accepts the callback from the upstream IdP (OIDC / LDAP / SAML) and "
+                    "returns a refresh token the client can use to obtain access tokens."
                 )
-                authentication_router.post(f"/provider/{provider}/code")(
-                    build_auth_code_route(authenticator, provider)
-                )
+                authentication_router.get(
+                    f"/provider/{provider}/code",
+                    summary=auth_code_summary,
+                    description=auth_code_description,
+                    tags=["Auth"],
+                )(build_auth_code_route(authenticator, provider))
+                authentication_router.post(
+                    f"/provider/{provider}/code",
+                    summary=auth_code_summary,
+                    description=auth_code_description,
+                    tags=["Auth"],
+                )(build_auth_code_route(authenticator, provider))
             else:
                 raise ValueError(f"unknown authentication mode {mode}")
             for custom_router in getattr(authenticator, "include_routers", []):

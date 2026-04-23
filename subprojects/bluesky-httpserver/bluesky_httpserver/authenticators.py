@@ -262,7 +262,17 @@ class SAMLAuthenticator:
 
         from onelogin.saml2.auth import OneLogin_Saml2_Auth
 
-        @router.get("/login")
+        @router.get(
+            "/login",
+            summary="Initiate a SAML login redirect",
+            description=(
+                "Start the SAML SSO flow for this provider. The endpoint builds the "
+                "AuthnRequest and redirects the caller to the configured Identity "
+                "Provider; the IdP's eventual callback is handled by "
+                "`/provider/{provider}/code`."
+            ),
+            tags=["Auth"],
+        )
         async def saml_login(request: Request):
             req = await prepare_saml_from_fastapi_request(request)
             auth = OneLogin_Saml2_Auth(req, self.saml_settings)

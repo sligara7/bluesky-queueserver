@@ -31,8 +31,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
-@router.get("/")
-@router.get("/ping")
+@router.get(
+    "/",
+    summary="Ping the RE Manager (root alias)",
+    description=(
+        "Returns a minimal response from RE Manager. Same handler as `/api/ping`. "
+        "Useful as a basic reachability/liveness check. Required scope: `read:status`."
+    ),
+    tags=["Status"],
+)
+@router.get(
+    "/ping",
+    summary="Ping the RE Manager",
+    description=(
+        "Returns a minimal response from RE Manager — a lightweight way to confirm the "
+        "server is reachable and the manager process is responsive. Required scope: `read:status`."
+    ),
+    tags=["Status"],
+)
 async def ping_handler(payload: dict = {}, principal=Security(get_current_principal, scopes=["read:status"])):
     """
     May be called to get some response from the server. Currently returns status of RE Manager.
@@ -44,7 +60,17 @@ async def ping_handler(payload: dict = {}, principal=Security(get_current_princi
     return msg
 
 
-@router.get("/status")
+@router.get(
+    "/status",
+    summary="Get RE Manager status",
+    description=(
+        "Returns a status snapshot of RE Manager — manager state, environment state, the "
+        "currently running item (if any), worker process status, queue/history counts, "
+        "plus the UIDs clients use for change detection when polling. "
+        "Required scope: `read:status`."
+    ),
+    tags=["Status"],
+)
 async def status_handler(
     request: Request,
     payload: dict = {},
@@ -62,7 +88,15 @@ async def status_handler(
     return msg
 
 
-@router.get("/config/get")
+@router.get(
+    "/config/get",
+    summary="Get manager configuration",
+    description=(
+        "Returns the manager's client-visible configuration dictionary (the subset of "
+        "settings considered safe to expose). Required scope: `read:config`."
+    ),
+    tags=["Config"],
+)
 async def queue_config_get(
     payload: dict = {},
     principal=Security(get_current_principal, scopes=["read:config"]),
@@ -77,13 +111,22 @@ async def queue_config_get(
     return msg
 
 
-@router.post("/queue/autostart")
+@router.post(
+    "/queue/autostart",
+    summary="Enable or disable queue autostart",
+    description=(
+        "When autostart is enabled, the queue starts automatically once the environment "
+        "is opened, and the manager resumes the queue automatically after a plan pauses. "
+        "Parameter: `enable` (bool). Required scope: `write:queue:control`."
+    ),
+    tags=["Queue"],
+)
 async def queue_autostart_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:queue:control"]),
 ):
     """
-    Set queue mode.
+    Enable or disable queue autostart.
     """
     try:
         msg = await SR.RM.queue_autostart(**payload)
@@ -92,7 +135,17 @@ async def queue_autostart_handler(
     return msg
 
 
-@router.post("/queue/mode/set")
+@router.post(
+    "/queue/mode/set",
+    summary="Set queue execution mode",
+    description=(
+        "Configure queue-level execution options such as `loop` (re-run the queue "
+        "indefinitely) or `ignore_failures` (continue after a failed plan). "
+        "Parameter: `mode` (dict of option names to values). "
+        "Required scope: `write:queue:control`."
+    ),
+    tags=["Queue"],
+)
 async def queue_mode_set_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:queue:control"]),
@@ -107,7 +160,16 @@ async def queue_mode_set_handler(
     return msg
 
 
-@router.get("/queue/get")
+@router.get(
+    "/queue/get",
+    summary="Get queue contents",
+    description=(
+        "Returns the current queue — the list of queued items, the currently running "
+        "item (if any), the `plan_queue_uid` used for change detection, and the active "
+        "`running_item_uid`. Required scope: `read:queue`."
+    ),
+    tags=["Queue"],
+)
 async def queue_get_handler(payload: dict = {}, principal=Security(get_current_principal, scopes=["read:queue"])):
     """
     Returns the contents of the current queue.
@@ -119,7 +181,15 @@ async def queue_get_handler(payload: dict = {}, principal=Security(get_current_p
     return msg
 
 
-@router.post("/queue/clear")
+@router.post(
+    "/queue/clear",
+    summary="Clear the queue",
+    description=(
+        "Remove all items from the queue. The currently running plan is not affected. "
+        "Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue"],
+)
 async def queue_clear_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:queue:edit"])
 ):
@@ -133,7 +203,16 @@ async def queue_clear_handler(
     return msg
 
 
-@router.post("/queue/start")
+@router.post(
+    "/queue/start",
+    summary="Start queue execution",
+    description=(
+        "Begin executing items from the queue. Additional items can be added to the queue "
+        "while it is running. If the queue is empty, the request succeeds and nothing runs. "
+        "Required scope: `write:queue:control`."
+    ),
+    tags=["Queue"],
+)
 async def queue_start_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:queue:control"])
 ):
@@ -148,7 +227,17 @@ async def queue_start_handler(
     return msg
 
 
-@router.post("/queue/stop")
+@router.post(
+    "/queue/stop",
+    summary="Request queue stop after current plan",
+    description=(
+        "Request the queue to stop after the currently running plan completes. The running "
+        "plan itself is not interrupted. Rejected if no plan is currently running. "
+        "Use `/queue/stop/cancel` to back out of a pending stop request. "
+        "Required scope: `write:queue:control`."
+    ),
+    tags=["Queue"],
+)
 async def queue_stop(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:queue:control"])
 ):
@@ -164,7 +253,16 @@ async def queue_stop(
     return msg
 
 
-@router.post("/queue/stop/cancel")
+@router.post(
+    "/queue/stop/cancel",
+    summary="Cancel a pending queue-stop request",
+    description=(
+        "Cancel a previously-issued `/queue/stop` request while the running plan has not "
+        "yet completed. Always succeeds; a no-op if no stop is pending. "
+        "Required scope: `write:queue:control`."
+    ),
+    tags=["Queue"],
+)
 async def queue_stop_cancel(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:queue:control"])
 ):
@@ -183,7 +281,16 @@ async def queue_stop_cancel(
     return msg
 
 
-@router.post("/queue/item/add")
+@router.post(
+    "/queue/item/add",
+    summary="Add an item to the queue",
+    description=(
+        "Add a single plan, instruction, or function to the queue. Parameter: `item` (dict) "
+        "describes what to run; `pos` / `before_uid` / `after_uid` optionally control where "
+        "in the queue the item is inserted. Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_add_handler(
     payload: dict = {},
     principal=Security(get_current_principal, scopes=["write:queue:edit"]),
@@ -212,7 +319,16 @@ async def queue_item_add_handler(
     return msg
 
 
-@router.post("/queue/item/execute")
+@router.post(
+    "/queue/item/execute",
+    summary="Execute an item immediately",
+    description=(
+        "Execute the supplied item once, outside the queue. The item does not join the queue "
+        "and does not appear in queue listings. Parameter: `item` (dict). "
+        "Required scope: `write:execute`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_execute_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:execute"]),
@@ -241,7 +357,16 @@ async def queue_item_execute_handler(
     return msg
 
 
-@router.post("/queue/item/add/batch")
+@router.post(
+    "/queue/item/add/batch",
+    summary="Add a batch of items to the queue",
+    description=(
+        "Add multiple items to the queue in a single request. Parameter: `items` (list of "
+        "item dicts). The server validates each item; per-item success/failure is returned "
+        "in the response. Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_add_batch_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:queue:edit"]),
@@ -271,7 +396,18 @@ async def queue_item_add_batch_handler(
     return msg
 
 
-@router.post("/queue/upload/spreadsheet")
+@router.post(
+    "/queue/upload/spreadsheet",
+    summary="Upload a spreadsheet and enqueue the resulting plans",
+    description=(
+        "Multipart upload: a spreadsheet file is processed (either by a user-provided "
+        "`spreadsheet_to_plan_list` function in a loaded custom module or by the default "
+        "processor) and the resulting plan list is added to the queue as a batch. "
+        "Form fields: `spreadsheet` (file), `data_type` (optional str — hint used by custom "
+        "processors to pick a parsing strategy). Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_upload_spreadsheet(
     spreadsheet: UploadFile = File(...),
     data_type: Optional[str] = Form(None),
@@ -383,7 +519,16 @@ async def queue_upload_spreadsheet(
     return msg
 
 
-@router.post("/queue/item/update")
+@router.post(
+    "/queue/item/update",
+    summary="Update an existing queue item",
+    description=(
+        "Replace or patch an existing queue item (identified by `item_uid`) with a new "
+        "specification. Rejected if the item is not in the queue or is currently running. "
+        "Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_update_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:queue:edit"]),
@@ -408,7 +553,15 @@ async def queue_item_update_handler(
     return msg
 
 
-@router.post("/queue/item/remove")
+@router.post(
+    "/queue/item/remove",
+    summary="Remove an item from the queue",
+    description=(
+        "Remove a single item from the queue by position (`pos`) or UID (`uid`). "
+        "Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_remove_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:queue:edit"]),
@@ -423,7 +576,15 @@ async def queue_item_remove_handler(
     return msg
 
 
-@router.post("/queue/item/remove/batch")
+@router.post(
+    "/queue/item/remove/batch",
+    summary="Remove a batch of items from the queue",
+    description=(
+        "Remove multiple items from the queue in a single request. Parameter: `uids` (list "
+        "of item UIDs). Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_remove_batch_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:queue:edit"]),
@@ -442,7 +603,15 @@ async def queue_item_remove_batch_handler(
     return msg
 
 
-@router.post("/queue/item/move")
+@router.post(
+    "/queue/item/move",
+    summary="Move an item within the queue",
+    description=(
+        "Reposition a queue item. Source selected by `pos` or `uid`; destination by `pos_dest`, "
+        "`before_uid`, or `after_uid`. Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_move_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:queue:edit"]),
@@ -457,7 +626,16 @@ async def queue_item_move_handler(
     return msg
 
 
-@router.post("/queue/item/move/batch")
+@router.post(
+    "/queue/item/move/batch",
+    summary="Move a batch of items within the queue",
+    description=(
+        "Reposition multiple items in the queue in a single request. Parameter: `uids` (list "
+        "of item UIDs) plus a destination selector (`pos_dest`, `before_uid`, or `after_uid`). "
+        "Required scope: `write:queue:edit`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_move_batch_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:queue:edit"]),
@@ -472,7 +650,15 @@ async def queue_item_move_batch_handler(
     return msg
 
 
-@router.get("/queue/item/get")
+@router.get(
+    "/queue/item/get",
+    summary="Get a single queue item",
+    description=(
+        "Returns details for a single queue item by position (`pos`) or UID (`uid`). "
+        "Required scope: `read:queue`."
+    ),
+    tags=["Queue Items"],
+)
 async def queue_item_get_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["read:queue"])
 ):
@@ -486,7 +672,15 @@ async def queue_item_get_handler(
     return msg
 
 
-@router.get("/history/get")
+@router.get(
+    "/history/get",
+    summary="Get plan history",
+    description=(
+        "Returns the list of completed plans in chronological order, plus the `plan_history_uid` "
+        "for change detection. Required scope: `read:history`."
+    ),
+    tags=["History"],
+)
 async def history_get_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["read:history"])
 ):
@@ -500,7 +694,15 @@ async def history_get_handler(
     return msg
 
 
-@router.post("/history/clear")
+@router.post(
+    "/history/clear",
+    summary="Clear plan history",
+    description=(
+        "Remove all entries from the plan-history buffer. "
+        "Required scope: `write:history:edit`."
+    ),
+    tags=["History"],
+)
 async def history_clear_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:history:edit"])
 ):
@@ -515,7 +717,16 @@ async def history_clear_handler(
     return msg
 
 
-@router.post("/environment/open")
+@router.post(
+    "/environment/open",
+    summary="Open the RE environment",
+    description=(
+        "Spawn the RE Worker subprocess and initialize the Run Engine. Required before the "
+        "queue can execute plans or before scripts/functions can be uploaded. "
+        "Required scope: `write:manager:control`."
+    ),
+    tags=["Environment"],
+)
 async def environment_open_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:manager:control"])
 ):
@@ -529,7 +740,16 @@ async def environment_open_handler(
     return msg
 
 
-@router.post("/environment/close")
+@router.post(
+    "/environment/close",
+    summary="Close the RE environment cleanly",
+    description=(
+        "Orderly shutdown of the RE Worker. Rejected if a plan is currently running — call "
+        "`/queue/stop` or `/re/stop` first, or use `/environment/destroy` for a forceful "
+        "shutdown. Required scope: `write:manager:control`."
+    ),
+    tags=["Environment"],
+)
 async def environment_close_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:manager:control"])
 ):
@@ -544,7 +764,16 @@ async def environment_close_handler(
     return msg
 
 
-@router.post("/environment/destroy")
+@router.post(
+    "/environment/destroy",
+    summary="Forcefully destroy the RE environment",
+    description=(
+        "Kill the RE Worker process without waiting for the running plan to complete. "
+        "Last-resort recovery path — intended for expert operators when the worker is hung "
+        "and cannot be stopped cleanly. Required scope: `write:manager:control`."
+    ),
+    tags=["Environment"],
+)
 async def environment_destroy_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:manager:control"])
 ):
@@ -559,7 +788,17 @@ async def environment_destroy_handler(
     return msg
 
 
-@router.post("/environment/update")
+@router.post(
+    "/environment/update",
+    summary="Refresh environment caches",
+    description=(
+        "Refresh manager-side caches of plans, devices, and namespace metadata from the "
+        "running worker. Call after uploading a script that adds or redefines plans/devices "
+        "so subsequent `/plans/*` and `/devices/*` responses reflect the change. "
+        "Required scope: `write:queue:control`."
+    ),
+    tags=["Environment"],
+)
 async def environment_update_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:queue:control"])
 ):
@@ -573,7 +812,16 @@ async def environment_update_handler(
     return msg
 
 
-@router.post("/re/pause")
+@router.post(
+    "/re/pause",
+    summary="Pause the Run Engine",
+    description=(
+        "Pause the currently running plan. Parameter: `option` — `'deferred'` (pause at the "
+        "next checkpoint, safe) or `'immediate'` (pause at the next safe point). "
+        "Required scope: `write:plan:control`."
+    ),
+    tags=["Run Engine"],
+)
 async def re_pause_handler(
     payload: dict = {},
     principal=Security(get_current_principal, scopes=["write:plan:control"]),
@@ -588,7 +836,15 @@ async def re_pause_handler(
     return msg
 
 
-@router.post("/re/resume")
+@router.post(
+    "/re/resume",
+    summary="Resume a paused plan",
+    description=(
+        "Resume execution of the currently paused plan. "
+        "Required scope: `write:plan:control`."
+    ),
+    tags=["Run Engine"],
+)
 async def re_resume_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:plan:control"])
 ):
@@ -602,7 +858,15 @@ async def re_resume_handler(
     return msg
 
 
-@router.post("/re/stop")
+@router.post(
+    "/re/stop",
+    summary="Stop a paused plan cleanly",
+    description=(
+        "Stop the currently paused plan. The plan is marked as successfully completed from "
+        "the Run Engine's perspective. Required scope: `write:plan:control`."
+    ),
+    tags=["Run Engine"],
+)
 async def re_stop_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:plan:control"])
 ):
@@ -616,7 +880,16 @@ async def re_stop_handler(
     return msg
 
 
-@router.post("/re/abort")
+@router.post(
+    "/re/abort",
+    summary="Abort a paused plan",
+    description=(
+        "Abort the currently paused plan. The plan is marked as failed, but Run Engine "
+        "cleanup handlers still run (devices are returned to safe states). "
+        "Required scope: `write:plan:control`."
+    ),
+    tags=["Run Engine"],
+)
 async def re_abort_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:plan:control"])
 ):
@@ -630,7 +903,16 @@ async def re_abort_handler(
     return msg
 
 
-@router.post("/re/halt")
+@router.post(
+    "/re/halt",
+    summary="Halt a paused plan (no cleanup)",
+    description=(
+        "Halt the currently paused plan immediately without running cleanup handlers. More "
+        "aggressive than `/re/abort` — use when cleanup itself is misbehaving. "
+        "Required scope: `write:plan:control`."
+    ),
+    tags=["Run Engine"],
+)
 async def re_halt_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:plan:control"])
 ):
@@ -644,7 +926,17 @@ async def re_halt_handler(
     return msg
 
 
-@router.post("/re/runs")
+@router.post(
+    "/re/runs",
+    summary="List runs produced by the current plan",
+    description=(
+        "Returns runs opened during the currently running plan. Parameter: `option` selects "
+        "`'active'` (all), `'open'`, or `'closed'`; default `'active'`. See "
+        "`/re/runs/active`, `/re/runs/open`, `/re/runs/closed` for convenience aliases. "
+        "Required scope: `read:monitor`."
+    ),
+    tags=["Runs"],
+)
 async def re_runs_handler(payload: dict = {}, principal=Security(get_current_principal, scopes=["read:monitor"])):
     """
     Run Engine: download the list of active, open or closed runs (runs that were opened
@@ -659,7 +951,16 @@ async def re_runs_handler(payload: dict = {}, principal=Security(get_current_pri
     return msg
 
 
-@router.get("/re/runs/active")
+@router.get(
+    "/re/runs/active",
+    summary="List all runs produced by the current plan",
+    description=(
+        "Convenience alias for `POST /re/runs` with `option='active'`. Returns runs opened "
+        "during the currently running plan (both open and closed). "
+        "Required scope: `read:monitor`."
+    ),
+    tags=["Runs"],
+)
 async def re_runs_active_handler(principal=Security(get_current_principal, scopes=["read:monitor"])):
     """
     Run Engine: download the list of active runs (runs that were opened during execution of
@@ -673,7 +974,16 @@ async def re_runs_active_handler(principal=Security(get_current_principal, scope
     return msg
 
 
-@router.get("/re/runs/open")
+@router.get(
+    "/re/runs/open",
+    summary="List open runs produced by the current plan",
+    description=(
+        "Convenience alias for `POST /re/runs` with `option='open'`. Returns the subset of "
+        "active runs that have been opened but not yet closed. "
+        "Required scope: `read:monitor`."
+    ),
+    tags=["Runs"],
+)
 async def re_runs_open_handler(principal=Security(get_current_principal, scopes=["read:monitor"])):
     """
     Run Engine: download the subset of active runs that includes runs that were open, but not yet closed.
@@ -686,7 +996,15 @@ async def re_runs_open_handler(principal=Security(get_current_principal, scopes=
     return msg
 
 
-@router.get("/re/runs/closed")
+@router.get(
+    "/re/runs/closed",
+    summary="List closed runs produced by the current plan",
+    description=(
+        "Convenience alias for `POST /re/runs` with `option='closed'`. Returns runs from "
+        "the current plan that have been closed. Required scope: `read:monitor`."
+    ),
+    tags=["Runs"],
+)
 async def re_runs_closed_handler(principal=Security(get_current_principal, scopes=["read:monitor"])):
     """
     Run Engine: download the subset of active runs that includes runs that were already closed.
@@ -699,7 +1017,15 @@ async def re_runs_closed_handler(principal=Security(get_current_principal, scope
     return msg
 
 
-@router.get("/re/metadata")
+@router.get(
+    "/re/metadata",
+    summary="Get metadata of the currently running plan",
+    description=(
+        "Returns the metadata of the plan currently executing in the Run Engine "
+        "(run-specific kwargs, scan_id, etc.). Required scope: `read:monitor`."
+    ),
+    tags=["Runs"],
+)
 async def re_metadata(payload: dict = {}, principal=Security(get_current_principal, scopes=["read:monitor"])):
     """
     Run Engine: download the metadata of the currently running plan.
@@ -711,7 +1037,16 @@ async def re_metadata(payload: dict = {}, principal=Security(get_current_princip
     return msg
 
 
-@router.get("/plans/allowed")
+@router.get(
+    "/plans/allowed",
+    summary="List plans allowed for the current user",
+    description=(
+        "Returns plans the current user's resource group is permitted to execute. "
+        "Parameter: `reduced` (bool, default `False`) — when `True`, plan descriptions "
+        "are simplified to save bandwidth. Required scope: `read:resources`."
+    ),
+    tags=["Plans"],
+)
 async def plans_allowed_handler(
     payload: dict = {},
     principal=Security(get_current_principal, scopes=["read:resources"]),
@@ -748,7 +1083,15 @@ async def plans_allowed_handler(
     return msg
 
 
-@router.get("/devices/allowed")
+@router.get(
+    "/devices/allowed",
+    summary="List devices allowed for the current user",
+    description=(
+        "Returns devices the current user's resource group is permitted to use. "
+        "Required scope: `read:resources`."
+    ),
+    tags=["Devices"],
+)
 async def devices_allowed_handler(
     payload: dict = {},
     principal=Security(get_current_principal, scopes=["read:resources"]),
@@ -773,7 +1116,16 @@ async def devices_allowed_handler(
     return msg
 
 
-@router.get("/plans/existing")
+@router.get(
+    "/plans/existing",
+    summary="List all plans registered in the worker",
+    description=(
+        "Returns all plans registered in the worker namespace, not filtered by user "
+        "permissions. Parameter: `reduced` (bool, default `False`) — when `True`, plan "
+        "descriptions are simplified to save bandwidth."
+    ),
+    tags=["Plans"],
+)
 async def plans_existing_handler(
     payload: dict = {},
 ):
@@ -800,7 +1152,15 @@ async def plans_existing_handler(
     return msg
 
 
-@router.get("/devices/existing")
+@router.get(
+    "/devices/existing",
+    summary="List all devices registered in the worker",
+    description=(
+        "Returns all devices registered in the worker namespace, not filtered by user "
+        "permissions. Required scope: `read:resources`."
+    ),
+    tags=["Devices"],
+)
 async def devices_existing_handler(
     payload: dict = {},
     principal=Security(get_current_principal, scopes=["read:resources"]),
@@ -815,7 +1175,16 @@ async def devices_existing_handler(
     return msg
 
 
-@router.post("/permissions/reload")
+@router.post(
+    "/permissions/reload",
+    summary="Reload permissions from disk",
+    description=(
+        "Reload allowed-plans, allowed-devices, and user-group-permissions definitions from "
+        "the paths configured on the manager. Use after editing the underlying files on "
+        "disk. Required scope: `write:config`."
+    ),
+    tags=["Permissions"],
+)
 async def permissions_reload_handler(
     payload: dict = {},
     principal=Security(get_current_principal, scopes=["write:config"]),
@@ -832,7 +1201,15 @@ async def permissions_reload_handler(
     return msg
 
 
-@router.get("/permissions/get")
+@router.get(
+    "/permissions/get",
+    summary="Get user-group permissions",
+    description=(
+        "Returns the current user-group permissions dictionary. "
+        "Required scope: `read:config`."
+    ),
+    tags=["Permissions"],
+)
 async def permissions_get_handler(principal=Security(get_current_principal, scopes=["read:config"])):
     """
     Download the dictionary of user group permissions.
@@ -844,7 +1221,15 @@ async def permissions_get_handler(principal=Security(get_current_principal, scop
     return msg
 
 
-@router.post("/permissions/set")
+@router.post(
+    "/permissions/set",
+    summary="Set user-group permissions",
+    description=(
+        "Replace the current user-group permissions. Parameter: `user_group_permissions` "
+        "(dict). Required scope: `write:permissions`."
+    ),
+    tags=["Permissions"],
+)
 async def permissions_set_handler(
     payload: dict, principal=Security(get_current_principal, scopes=["write:permissions", "write:permissions"])
 ):
@@ -862,7 +1247,17 @@ async def permissions_set_handler(
     return msg
 
 
-@router.post("/function/execute")
+@router.post(
+    "/function/execute",
+    summary="Execute a function in the worker",
+    description=(
+        "Execute a function defined in the worker's startup scripts. Parameter: `item` "
+        "(function-item spec with `name`, `args`, `kwargs`). Returns a `task_uid` — poll "
+        "`/task/status` and `/task/result` for progress and output. "
+        "Required scope: `write:execute`."
+    ),
+    tags=["Scripts & Functions"],
+)
 async def function_execute_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:execute"]),
@@ -891,7 +1286,17 @@ async def function_execute_handler(
     return msg
 
 
-@router.post("/script/upload")
+@router.post(
+    "/script/upload",
+    summary="Upload and execute a Python script in the worker",
+    description=(
+        "Send a Python source string to the worker for execution. Parameter: `script` (str). "
+        "Side-effects (new plans, new devices, redefined functions) are visible in "
+        "subsequent calls after an `/environment/update`. Returns a `task_uid`. "
+        "Required scope: `write:scripts`."
+    ),
+    tags=["Scripts & Functions"],
+)
 async def script_upload_handler(
     payload: dict, principal=Security(get_current_principal, scopes=["write:scripts"])
 ):
@@ -909,7 +1314,16 @@ async def script_upload_handler(
     return msg
 
 
-@router.get("/task/status")
+@router.get(
+    "/task/status",
+    summary="Get status of one or more worker tasks",
+    description=(
+        "Returns the status of tasks started via `/function/execute` or `/script/upload`. "
+        "Parameter: `task_uid` (str for a single task, or list of str for multiple). "
+        "Required scope: `read:monitor`."
+    ),
+    tags=["Scripts & Functions"],
+)
 async def task_status(payload: dict, principal=Security(get_current_principal, scopes=["read:monitor"])):
     """
     Return status of one or more running tasks.
@@ -925,7 +1339,16 @@ async def task_status(payload: dict, principal=Security(get_current_principal, s
     return msg
 
 
-@router.get("/task/result")
+@router.get(
+    "/task/result",
+    summary="Get result of a worker task",
+    description=(
+        "Returns the result (or error) of a completed task, or the in-progress status if "
+        "still running. Parameter: `task_uid` (str). "
+        "Required scope: `read:monitor`."
+    ),
+    tags=["Scripts & Functions"],
+)
 async def task_result(payload: dict, principal=Security(get_current_principal, scopes=["read:monitor"])):
     """
     Return result of execution of a running or completed task.
@@ -941,7 +1364,16 @@ async def task_result(payload: dict, principal=Security(get_current_principal, s
     return msg
 
 
-@router.post("/kernel/interrupt")
+@router.post(
+    "/kernel/interrupt",
+    summary="Interrupt the worker IPython kernel",
+    description=(
+        "Send a keyboard-interrupt to the IPython-kernel-based worker. No-op for worker "
+        "configurations that do not use an IPython kernel. "
+        "Required scope: `write:queue:control`."
+    ),
+    tags=["Scripts & Functions"],
+)
 async def kernel_interrupt_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:queue:control"])
 ):
@@ -955,7 +1387,17 @@ async def kernel_interrupt_handler(
     return msg
 
 
-@router.post("/lock")
+@router.post(
+    "/lock",
+    summary="Acquire the manager lock",
+    description=(
+        "Acquire an exclusive lock on RE Manager, preventing other users from altering "
+        "locked resources. Parameters: `lock_key` (str, required to unlock later), `note` "
+        "(str, description shown to other users), `scope` (list of `'environment'` and/or "
+        "`'queue'`). Required scope: `write:lock`."
+    ),
+    tags=["Lock"],
+)
 async def lock_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:lock"]),
@@ -978,7 +1420,15 @@ async def lock_handler(
     return msg
 
 
-@router.post("/unlock")
+@router.post(
+    "/unlock",
+    summary="Release the manager lock",
+    description=(
+        "Release a previously-acquired manager lock. Parameter: `lock_key` (must match the "
+        "value used at lock time). Required scope: `write:lock`."
+    ),
+    tags=["Lock"],
+)
 async def unlock_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["write:lock"]),
@@ -993,13 +1443,22 @@ async def unlock_handler(
     return msg
 
 
-@router.get("/lock/info")
+@router.get(
+    "/lock/info",
+    summary="Get current manager lock state",
+    description=(
+        "Returns the current lock state: who holds the lock, when it was acquired, the "
+        "associated note, and which scopes are locked. "
+        "Required scope: `read:lock`."
+    ),
+    tags=["Lock"],
+)
 async def lock_info_handler(
     payload: dict,
     principal=Security(get_current_principal, scopes=["read:lock"]),
 ):
     """
-    Unlock RE Manager.
+    Get current manager lock state.
     """
     try:
         msg = await SR.RM.lock_info(**payload)
@@ -1008,7 +1467,16 @@ async def lock_info_handler(
     return msg
 
 
-@router.post("/manager/stop")
+@router.post(
+    "/manager/stop",
+    summary="Stop the RE Manager",
+    description=(
+        "Stop RE Manager. Unlike crash-and-restart behaviour, the manager will NOT be "
+        "auto-restarted by the watchdog after a stop issued via this endpoint. "
+        "Required scope: `write:manager:stop`."
+    ),
+    tags=["Manager"],
+)
 async def manager_stop_handler(
     payload: dict = {}, principal=Security(get_current_principal, scopes=["write:manager:stop"])
 ):
@@ -1022,7 +1490,16 @@ async def manager_stop_handler(
     return msg
 
 
-@router.post("/test/manager/kill")
+@router.post(
+    "/test/manager/kill",
+    summary="Kill the manager event loop (testing only)",
+    description=(
+        "Halt the manager event loop to test client-side timeout handling and watchdog "
+        "restart behaviour. Not for production use. "
+        "Required scope: `write:testing`."
+    ),
+    tags=["Testing"],
+)
 async def test_manager_kill_handler(principal=Security(get_current_principal, scopes=["write:testing"])):
     """
     The command stops event loop of RE Manager process. Used for testing of RE Manager
@@ -1035,7 +1512,16 @@ async def test_manager_kill_handler(principal=Security(get_current_principal, sc
     return msg
 
 
-@router.get("/test/server/sleep")
+@router.get(
+    "/test/server/sleep",
+    summary="Sleep on the server (testing only)",
+    description=(
+        "Sleep for `time` seconds then return success. Does not block the event loop or "
+        "manager calls. Used to exercise client timeout handling. "
+        "Required scope: `read:testing`."
+    ),
+    tags=["Testing"],
+)
 async def test_server_sleep_handler(
     payload: dict, principal=Security(get_current_principal, scopes=["read:testing"])
 ):
@@ -1055,7 +1541,16 @@ async def test_server_sleep_handler(
     return msg
 
 
-@router.get("/stream_console_output")
+@router.get(
+    "/stream_console_output",
+    summary="Stream captured console output (Server-Sent Events)",
+    description=(
+        "Returns a text/event-stream of captured worker stdout/stderr. The connection "
+        "stays open and the client reads lines as they arrive. "
+        "Required scope: `read:console`."
+    ),
+    tags=["Console Output"],
+)
 def stream_console_output(principal=Security(get_current_principal, scopes=["read:console"])):
     queues_set = SR.console_output_loader.queues_set
     stm = ConsoleOutputEventStream(queues_set=queues_set)
@@ -1063,7 +1558,15 @@ def stream_console_output(principal=Security(get_current_principal, scopes=["rea
     return sr
 
 
-@router.get("/console_output")
+@router.get(
+    "/console_output",
+    summary="Get buffered console output",
+    description=(
+        "Returns the most recent lines of captured worker console output as a text blob. "
+        "Parameter: `nlines` (int, default 200). Required scope: `read:console`."
+    ),
+    tags=["Console Output"],
+)
 async def console_output(payload: dict = {}, principal=Security(get_current_principal, scopes=["read:console"])):
     try:
         n_lines = payload.get("nlines", 200)
@@ -1075,7 +1578,16 @@ async def console_output(payload: dict = {}, principal=Security(get_current_prin
     return {"success": True, "msg": "", "text": text}
 
 
-@router.get("/console_output/uid")
+@router.get(
+    "/console_output/uid",
+    summary="Get the console-output buffer UID",
+    description=(
+        "Returns the UID of the current console-output buffer. Pair with `/console_output` "
+        "to detect when the buffer has been reset (for example after the environment is "
+        "restarted). Required scope: `read:console`."
+    ),
+    tags=["Console Output"],
+)
 def console_output_uid(principal=Security(get_current_principal, scopes=["read:console"])):
     """
     UID of the text buffer. Use with ``console_output`` API.
@@ -1087,7 +1599,18 @@ def console_output_uid(principal=Security(get_current_principal, scopes=["read:c
     return {"success": True, "msg": "", "console_output_uid": uid}
 
 
-@router.get("/console_output_update")
+@router.get(
+    "/console_output_update",
+    summary="Fetch new console messages since last UID",
+    description=(
+        "Returns console-output messages accumulated since the `last_msg_uid` supplied by "
+        "the caller. Initialize with `'ALL'` to receive all buffered messages; on each "
+        "subsequent call, pass back the UID from the previous response. If the UID is not "
+        "found in the buffer (rollover), an empty message list and a fresh UID are "
+        "returned. Required scope: `read:console`."
+    ),
+    tags=["Console Output"],
+)
 def console_output_update(payload: dict, principal=Security(get_current_principal, scopes=["read:console"])):
     """
     Download the list of new messages that were accumulated at the server. The API
