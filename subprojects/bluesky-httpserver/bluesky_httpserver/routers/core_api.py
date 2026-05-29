@@ -16,6 +16,31 @@ else:
 
 from ..authentication import get_current_principal, get_current_principal_websocket
 from ..console_output import ConsoleOutputEventStream, StreamingResponseFromClass
+from ..re_manager_schemas import (
+    ConfigGetResponse,
+    ConsoleOutputResponse,
+    ConsoleOutputUidResponse,
+    ConsoleOutputUpdateResponse,
+    DevicesAllowedResponse,
+    DevicesExistingResponse,
+    FunctionExecuteResponse,
+    HistoryGetResponse,
+    ItemGetResponse,
+    ItemResponse,
+    ItemsBatchResponse,
+    LockResponse,
+    PermissionsGetResponse,
+    PlansAllowedResponse,
+    PlansExistingResponse,
+    QueueGetResponse,
+    ReMetadataResponse,
+    RunsResponse,
+    StatusResponse,
+    SuccessMsgResponse,
+    TaskResultResponse,
+    TaskStatusResponse,
+    TaskUidResponse,
+)
 from ..resources import SERVER_RESOURCES as SR
 from ..settings import get_settings
 from ..utils import (
@@ -33,6 +58,8 @@ router = APIRouter(prefix="/api")
 
 @router.get(
     "/",
+    response_model=StatusResponse,
+    response_model_exclude_unset=True,
     summary="Ping the RE Manager (root alias)",
     description=(
         "Returns a minimal response from RE Manager. Same handler as `/api/ping`. "
@@ -42,6 +69,8 @@ router = APIRouter(prefix="/api")
 )
 @router.get(
     "/ping",
+    response_model=StatusResponse,
+    response_model_exclude_unset=True,
     summary="Ping the RE Manager",
     description=(
         "Returns a minimal response from RE Manager — a lightweight way to confirm the "
@@ -62,6 +91,8 @@ async def ping_handler(payload: dict = {}, principal=Security(get_current_princi
 
 @router.get(
     "/status",
+    response_model=StatusResponse,
+    response_model_exclude_unset=True,
     summary="Get RE Manager status",
     description=(
         "Returns a status snapshot of RE Manager — manager state, environment state, the "
@@ -90,6 +121,8 @@ async def status_handler(
 
 @router.get(
     "/config/get",
+    response_model=ConfigGetResponse,
+    response_model_exclude_unset=True,
     summary="Get manager configuration",
     description=(
         "Returns the manager's client-visible configuration dictionary (the subset of "
@@ -113,6 +146,8 @@ async def queue_config_get(
 
 @router.post(
     "/queue/autostart",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Enable or disable queue autostart",
     description=(
         "When autostart is enabled, the queue starts automatically once the environment "
@@ -137,6 +172,8 @@ async def queue_autostart_handler(
 
 @router.post(
     "/queue/mode/set",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Set queue execution mode",
     description=(
         "Configure queue-level execution options such as `loop` (re-run the queue "
@@ -162,6 +199,8 @@ async def queue_mode_set_handler(
 
 @router.get(
     "/queue/get",
+    response_model=QueueGetResponse,
+    response_model_exclude_unset=True,
     summary="Get queue contents",
     description=(
         "Returns the current queue — the list of queued items, the currently running "
@@ -183,6 +222,8 @@ async def queue_get_handler(payload: dict = {}, principal=Security(get_current_p
 
 @router.post(
     "/queue/clear",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Clear the queue",
     description=(
         "Remove all items from the queue. The currently running plan is not affected. "
@@ -205,6 +246,8 @@ async def queue_clear_handler(
 
 @router.post(
     "/queue/start",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Start queue execution",
     description=(
         "Begin executing items from the queue. Additional items can be added to the queue "
@@ -229,6 +272,8 @@ async def queue_start_handler(
 
 @router.post(
     "/queue/stop",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Request queue stop after current plan",
     description=(
         "Request the queue to stop after the currently running plan completes. The running "
@@ -255,6 +300,8 @@ async def queue_stop(
 
 @router.post(
     "/queue/stop/cancel",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Cancel a pending queue-stop request",
     description=(
         "Cancel a previously-issued `/queue/stop` request while the running plan has not "
@@ -283,6 +330,8 @@ async def queue_stop_cancel(
 
 @router.post(
     "/queue/item/add",
+    response_model=ItemResponse,
+    response_model_exclude_unset=True,
     summary="Add an item to the queue",
     description=(
         "Add a single plan, instruction, or function to the queue. Parameter: `item` (dict) "
@@ -321,6 +370,8 @@ async def queue_item_add_handler(
 
 @router.post(
     "/queue/item/execute",
+    response_model=ItemResponse,
+    response_model_exclude_unset=True,
     summary="Execute an item immediately",
     description=(
         "Execute the supplied item once, outside the queue. The item does not join the queue "
@@ -359,6 +410,8 @@ async def queue_item_execute_handler(
 
 @router.post(
     "/queue/item/add/batch",
+    response_model=ItemsBatchResponse,
+    response_model_exclude_unset=True,
     summary="Add a batch of items to the queue",
     description=(
         "Add multiple items to the queue in a single request. Parameter: `items` (list of "
@@ -398,6 +451,8 @@ async def queue_item_add_batch_handler(
 
 @router.post(
     "/queue/upload/spreadsheet",
+    response_model=ItemsBatchResponse,
+    response_model_exclude_unset=True,
     summary="Upload a spreadsheet and enqueue the resulting plans",
     description=(
         "Multipart upload: a spreadsheet file is processed (either by a user-provided "
@@ -521,6 +576,8 @@ async def queue_upload_spreadsheet(
 
 @router.post(
     "/queue/item/update",
+    response_model=ItemResponse,
+    response_model_exclude_unset=True,
     summary="Update an existing queue item",
     description=(
         "Replace or patch an existing queue item (identified by `item_uid`) with a new "
@@ -555,6 +612,8 @@ async def queue_item_update_handler(
 
 @router.post(
     "/queue/item/remove",
+    response_model=ItemResponse,
+    response_model_exclude_unset=True,
     summary="Remove an item from the queue",
     description=(
         "Remove a single item from the queue by position (`pos`) or UID (`uid`). "
@@ -578,6 +637,8 @@ async def queue_item_remove_handler(
 
 @router.post(
     "/queue/item/remove/batch",
+    response_model=ItemsBatchResponse,
+    response_model_exclude_unset=True,
     summary="Remove a batch of items from the queue",
     description=(
         "Remove multiple items from the queue in a single request. Parameter: `uids` (list "
@@ -605,6 +666,8 @@ async def queue_item_remove_batch_handler(
 
 @router.post(
     "/queue/item/move",
+    response_model=ItemResponse,
+    response_model_exclude_unset=True,
     summary="Move an item within the queue",
     description=(
         "Reposition a queue item. Source selected by `pos` or `uid`; destination by `pos_dest`, "
@@ -628,6 +691,8 @@ async def queue_item_move_handler(
 
 @router.post(
     "/queue/item/move/batch",
+    response_model=ItemsBatchResponse,
+    response_model_exclude_unset=True,
     summary="Move a batch of items within the queue",
     description=(
         "Reposition multiple items in the queue in a single request. Parameter: `uids` (list "
@@ -652,6 +717,8 @@ async def queue_item_move_batch_handler(
 
 @router.get(
     "/queue/item/get",
+    response_model=ItemGetResponse,
+    response_model_exclude_unset=True,
     summary="Get a single queue item",
     description=(
         "Returns details for a single queue item by position (`pos`) or UID (`uid`). "
@@ -674,6 +741,8 @@ async def queue_item_get_handler(
 
 @router.get(
     "/history/get",
+    response_model=HistoryGetResponse,
+    response_model_exclude_unset=True,
     summary="Get plan history",
     description=(
         "Returns the list of completed plans in chronological order, plus the `plan_history_uid` "
@@ -696,6 +765,8 @@ async def history_get_handler(
 
 @router.post(
     "/history/clear",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Clear plan history",
     description=(
         "Remove all entries from the plan-history buffer. "
@@ -719,6 +790,8 @@ async def history_clear_handler(
 
 @router.post(
     "/environment/open",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Open the RE environment",
     description=(
         "Spawn the RE Worker subprocess and initialize the Run Engine. Required before the "
@@ -742,6 +815,8 @@ async def environment_open_handler(
 
 @router.post(
     "/environment/close",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Close the RE environment cleanly",
     description=(
         "Orderly shutdown of the RE Worker. Rejected if a plan is currently running — call "
@@ -766,6 +841,8 @@ async def environment_close_handler(
 
 @router.post(
     "/environment/destroy",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Forcefully destroy the RE environment",
     description=(
         "Kill the RE Worker process without waiting for the running plan to complete. "
@@ -790,6 +867,8 @@ async def environment_destroy_handler(
 
 @router.post(
     "/environment/update",
+    response_model=TaskUidResponse,
+    response_model_exclude_unset=True,
     summary="Refresh environment caches",
     description=(
         "Refresh manager-side caches of plans, devices, and namespace metadata from the "
@@ -814,6 +893,8 @@ async def environment_update_handler(
 
 @router.post(
     "/re/pause",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Pause the Run Engine",
     description=(
         "Pause the currently running plan. Parameter: `option` — `'deferred'` (pause at the "
@@ -838,6 +919,8 @@ async def re_pause_handler(
 
 @router.post(
     "/re/resume",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Resume a paused plan",
     description=(
         "Resume execution of the currently paused plan. "
@@ -860,6 +943,8 @@ async def re_resume_handler(
 
 @router.post(
     "/re/stop",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Stop a paused plan cleanly",
     description=(
         "Stop the currently paused plan. The plan is marked as successfully completed from "
@@ -882,6 +967,8 @@ async def re_stop_handler(
 
 @router.post(
     "/re/abort",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Abort a paused plan",
     description=(
         "Abort the currently paused plan. The plan is marked as failed, but Run Engine "
@@ -905,6 +992,8 @@ async def re_abort_handler(
 
 @router.post(
     "/re/halt",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Halt a paused plan (no cleanup)",
     description=(
         "Halt the currently paused plan immediately without running cleanup handlers. More "
@@ -928,6 +1017,8 @@ async def re_halt_handler(
 
 @router.post(
     "/re/runs",
+    response_model=RunsResponse,
+    response_model_exclude_unset=True,
     summary="List runs produced by the current plan",
     description=(
         "Returns runs opened during the currently running plan. Parameter: `option` selects "
@@ -953,6 +1044,8 @@ async def re_runs_handler(payload: dict = {}, principal=Security(get_current_pri
 
 @router.get(
     "/re/runs/active",
+    response_model=RunsResponse,
+    response_model_exclude_unset=True,
     summary="List all runs produced by the current plan",
     description=(
         "Convenience alias for `POST /re/runs` with `option='active'`. Returns runs opened "
@@ -976,6 +1069,8 @@ async def re_runs_active_handler(principal=Security(get_current_principal, scope
 
 @router.get(
     "/re/runs/open",
+    response_model=RunsResponse,
+    response_model_exclude_unset=True,
     summary="List open runs produced by the current plan",
     description=(
         "Convenience alias for `POST /re/runs` with `option='open'`. Returns the subset of "
@@ -998,6 +1093,8 @@ async def re_runs_open_handler(principal=Security(get_current_principal, scopes=
 
 @router.get(
     "/re/runs/closed",
+    response_model=RunsResponse,
+    response_model_exclude_unset=True,
     summary="List closed runs produced by the current plan",
     description=(
         "Convenience alias for `POST /re/runs` with `option='closed'`. Returns runs from "
@@ -1019,6 +1116,8 @@ async def re_runs_closed_handler(principal=Security(get_current_principal, scope
 
 @router.get(
     "/re/metadata",
+    response_model=ReMetadataResponse,
+    response_model_exclude_unset=True,
     summary="Get metadata of the currently running plan",
     description=(
         "Returns the metadata of the plan currently executing in the Run Engine "
@@ -1039,6 +1138,8 @@ async def re_metadata(payload: dict = {}, principal=Security(get_current_princip
 
 @router.get(
     "/plans/allowed",
+    response_model=PlansAllowedResponse,
+    response_model_exclude_unset=True,
     summary="List plans allowed for the current user",
     description=(
         "Returns plans the current user's resource group is permitted to execute. "
@@ -1085,6 +1186,8 @@ async def plans_allowed_handler(
 
 @router.get(
     "/devices/allowed",
+    response_model=DevicesAllowedResponse,
+    response_model_exclude_unset=True,
     summary="List devices allowed for the current user",
     description=(
         "Returns devices the current user's resource group is permitted to use. "
@@ -1118,6 +1221,8 @@ async def devices_allowed_handler(
 
 @router.get(
     "/plans/existing",
+    response_model=PlansExistingResponse,
+    response_model_exclude_unset=True,
     summary="List all plans registered in the worker",
     description=(
         "Returns all plans registered in the worker namespace, not filtered by user "
@@ -1154,6 +1259,8 @@ async def plans_existing_handler(
 
 @router.get(
     "/devices/existing",
+    response_model=DevicesExistingResponse,
+    response_model_exclude_unset=True,
     summary="List all devices registered in the worker",
     description=(
         "Returns all devices registered in the worker namespace, not filtered by user "
@@ -1177,6 +1284,8 @@ async def devices_existing_handler(
 
 @router.post(
     "/permissions/reload",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Reload permissions from disk",
     description=(
         "Reload allowed-plans, allowed-devices, and user-group-permissions definitions from "
@@ -1203,6 +1312,8 @@ async def permissions_reload_handler(
 
 @router.get(
     "/permissions/get",
+    response_model=PermissionsGetResponse,
+    response_model_exclude_unset=True,
     summary="Get user-group permissions",
     description=(
         "Returns the current user-group permissions dictionary. "
@@ -1223,6 +1334,8 @@ async def permissions_get_handler(principal=Security(get_current_principal, scop
 
 @router.post(
     "/permissions/set",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Set user-group permissions",
     description=(
         "Replace the current user-group permissions. Parameter: `user_group_permissions` "
@@ -1249,6 +1362,8 @@ async def permissions_set_handler(
 
 @router.post(
     "/function/execute",
+    response_model=FunctionExecuteResponse,
+    response_model_exclude_unset=True,
     summary="Execute a function in the worker",
     description=(
         "Execute a function defined in the worker's startup scripts. Parameter: `item` "
@@ -1288,6 +1403,8 @@ async def function_execute_handler(
 
 @router.post(
     "/script/upload",
+    response_model=TaskUidResponse,
+    response_model_exclude_unset=True,
     summary="Upload and execute a Python script in the worker",
     description=(
         "Send a Python source string to the worker for execution. Parameter: `script` (str). "
@@ -1316,6 +1433,8 @@ async def script_upload_handler(
 
 @router.get(
     "/task/status",
+    response_model=TaskStatusResponse,
+    response_model_exclude_unset=True,
     summary="Get status of one or more worker tasks",
     description=(
         "Returns the status of tasks started via `/function/execute` or `/script/upload`. "
@@ -1341,6 +1460,8 @@ async def task_status(payload: dict, principal=Security(get_current_principal, s
 
 @router.get(
     "/task/result",
+    response_model=TaskResultResponse,
+    response_model_exclude_unset=True,
     summary="Get result of a worker task",
     description=(
         "Returns the result (or error) of a completed task, or the in-progress status if "
@@ -1366,6 +1487,8 @@ async def task_result(payload: dict, principal=Security(get_current_principal, s
 
 @router.post(
     "/kernel/interrupt",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Interrupt the worker IPython kernel",
     description=(
         "Send a keyboard-interrupt to the IPython-kernel-based worker. No-op for worker "
@@ -1389,6 +1512,8 @@ async def kernel_interrupt_handler(
 
 @router.post(
     "/lock",
+    response_model=LockResponse,
+    response_model_exclude_unset=True,
     summary="Acquire the manager lock",
     description=(
         "Acquire an exclusive lock on RE Manager, preventing other users from altering "
@@ -1422,6 +1547,8 @@ async def lock_handler(
 
 @router.post(
     "/unlock",
+    response_model=LockResponse,
+    response_model_exclude_unset=True,
     summary="Release the manager lock",
     description=(
         "Release a previously-acquired manager lock. Parameter: `lock_key` (must match the "
@@ -1445,6 +1572,8 @@ async def unlock_handler(
 
 @router.get(
     "/lock/info",
+    response_model=LockResponse,
+    response_model_exclude_unset=True,
     summary="Get current manager lock state",
     description=(
         "Returns the current lock state: who holds the lock, when it was acquired, the "
@@ -1469,6 +1598,8 @@ async def lock_info_handler(
 
 @router.post(
     "/manager/stop",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Stop the RE Manager",
     description=(
         "Stop RE Manager. Unlike crash-and-restart behaviour, the manager will NOT be "
@@ -1492,6 +1623,8 @@ async def manager_stop_handler(
 
 @router.post(
     "/test/manager/kill",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Kill the manager event loop (testing only)",
     description=(
         "Halt the manager event loop to test client-side timeout handling and watchdog "
@@ -1514,6 +1647,8 @@ async def test_manager_kill_handler(principal=Security(get_current_principal, sc
 
 @router.get(
     "/test/server/sleep",
+    response_model=SuccessMsgResponse,
+    response_model_exclude_unset=True,
     summary="Sleep on the server (testing only)",
     description=(
         "Sleep for `time` seconds then return success. Does not block the event loop or "
@@ -1560,6 +1695,8 @@ def stream_console_output(principal=Security(get_current_principal, scopes=["rea
 
 @router.get(
     "/console_output",
+    response_model=ConsoleOutputResponse,
+    response_model_exclude_unset=True,
     summary="Get buffered console output",
     description=(
         "Returns the most recent lines of captured worker console output as a text blob. "
@@ -1580,6 +1717,8 @@ async def console_output(payload: dict = {}, principal=Security(get_current_prin
 
 @router.get(
     "/console_output/uid",
+    response_model=ConsoleOutputUidResponse,
+    response_model_exclude_unset=True,
     summary="Get the console-output buffer UID",
     description=(
         "Returns the UID of the current console-output buffer. Pair with `/console_output` "
@@ -1601,6 +1740,8 @@ def console_output_uid(principal=Security(get_current_principal, scopes=["read:c
 
 @router.get(
     "/console_output_update",
+    response_model=ConsoleOutputUpdateResponse,
+    response_model_exclude_unset=True,
     summary="Fetch new console messages since last UID",
     description=(
         "Returns console-output messages accumulated since the `last_msg_uid` supplied by "

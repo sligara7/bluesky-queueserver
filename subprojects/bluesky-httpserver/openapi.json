@@ -3,7 +3,7 @@
   "info": {
     "title": "Bluesky HTTP Server",
     "description": "REST + WebSocket surface of the Bluesky Queue Server. Drives an experiment from\nthree angles: **queue** (plans and instructions waiting to run), **Run Engine**\n(control over the currently-running plan), and **worker environment** (startup\nscripts, plans, devices, and tasks inside the worker process).\n\nAll endpoints live under `/api`. Clients authenticate with a bearer token\n(access or API key); anonymous access, when enabled, is scoped to `read:status`\nonly. Most endpoints return `{\"success\": bool, \"msg\": str, ...}` envelopes \u2014\ninspect `success` on each response.\n\n### WebSocket endpoints (not listed below)\n\nThree push streams are available; they do not render in Swagger UI because\nOpenAPI has no WebSocket concept:\n\n- `GET /api/status/ws` \u2014 pushes the `/api/status` payload as it changes\n  (scope `read:monitor`).\n- `GET /api/info/ws` \u2014 pushes system-info snapshots (scope `read:monitor`).\n- `GET /api/console_output/ws` \u2014 pushes captured worker stdout/stderr\n  (scope `read:console`).\n\nClients authenticate WebSockets by passing the bearer token via a cookie or\nthe `Authorization` header on the upgrade request.\n",
-    "version": "0.0.24.post436.dev0+g0a6c78d"
+    "version": "0.0.24.post437.dev0+gcb146c3"
   },
   "paths": {
     "/api/ping": {
@@ -30,7 +30,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
               }
             }
           },
@@ -87,7 +89,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
               }
             }
           },
@@ -144,7 +148,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
               }
             }
           },
@@ -201,7 +207,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigGetResponse"
+                }
               }
             }
           },
@@ -258,7 +266,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -315,7 +325,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -372,7 +384,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/QueueGetResponse"
+                }
               }
             }
           },
@@ -429,7 +443,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -486,7 +502,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -543,7 +561,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -600,7 +620,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -657,7 +679,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemResponse"
+                }
               }
             }
           },
@@ -714,7 +738,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemResponse"
+                }
               }
             }
           },
@@ -771,7 +797,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemsBatchResponse"
+                }
               }
             }
           },
@@ -827,7 +855,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemsBatchResponse"
+                }
               }
             }
           },
@@ -884,7 +914,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemResponse"
+                }
               }
             }
           },
@@ -941,7 +973,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemResponse"
+                }
               }
             }
           },
@@ -998,7 +1032,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemsBatchResponse"
+                }
               }
             }
           },
@@ -1055,7 +1091,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemResponse"
+                }
               }
             }
           },
@@ -1112,7 +1150,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemsBatchResponse"
+                }
               }
             }
           },
@@ -1169,7 +1209,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ItemGetResponse"
+                }
               }
             }
           },
@@ -1226,7 +1268,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryGetResponse"
+                }
               }
             }
           },
@@ -1283,7 +1327,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1340,7 +1386,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1397,7 +1445,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1454,7 +1504,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1511,7 +1563,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TaskUidResponse"
+                }
               }
             }
           },
@@ -1568,7 +1622,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1625,7 +1681,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1682,7 +1740,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1739,7 +1799,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1796,7 +1858,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -1853,7 +1917,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RunsResponse"
+                }
               }
             }
           },
@@ -1899,7 +1965,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RunsResponse"
+                }
               }
             }
           }
@@ -1935,7 +2003,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RunsResponse"
+                }
               }
             }
           }
@@ -1971,7 +2041,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RunsResponse"
+                }
               }
             }
           }
@@ -2018,7 +2090,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ReMetadataResponse"
+                }
               }
             }
           },
@@ -2075,7 +2149,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlansAllowedResponse"
+                }
               }
             }
           },
@@ -2132,7 +2208,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DevicesAllowedResponse"
+                }
               }
             }
           },
@@ -2189,7 +2267,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PlansExistingResponse"
+                }
               }
             }
           },
@@ -2230,7 +2310,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DevicesExistingResponse"
+                }
               }
             }
           },
@@ -2287,7 +2369,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -2333,7 +2417,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsGetResponse"
+                }
               }
             }
           }
@@ -2380,7 +2466,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -2438,7 +2526,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/FunctionExecuteResponse"
+                }
               }
             }
           },
@@ -2495,7 +2585,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TaskUidResponse"
+                }
               }
             }
           },
@@ -2552,7 +2644,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatusResponse"
+                }
               }
             }
           },
@@ -2609,7 +2703,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResultResponse"
+                }
               }
             }
           },
@@ -2666,7 +2762,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -2723,7 +2821,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/LockResponse"
+                }
               }
             }
           },
@@ -2780,7 +2880,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/LockResponse"
+                }
               }
             }
           },
@@ -2837,7 +2939,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/LockResponse"
+                }
               }
             }
           },
@@ -2894,7 +2998,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -2940,7 +3046,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           }
@@ -2987,7 +3095,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                }
               }
             }
           },
@@ -3080,7 +3190,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleOutputResponse"
+                }
               }
             }
           },
@@ -3126,7 +3238,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleOutputUidResponse"
+                }
               }
             }
           }
@@ -3173,7 +3287,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConsoleOutputUpdateResponse"
+                }
               }
             }
           },
@@ -3957,6 +4073,257 @@
         ],
         "title": "Body_queue_upload_spreadsheet_api_queue_upload_spreadsheet_post"
       },
+      "ConfigGetResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "ConfigGetResponse"
+      },
+      "ConsoleOutputResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "ConsoleOutputResponse"
+      },
+      "ConsoleOutputUidResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "console_output_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Console Output Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "ConsoleOutputUidResponse"
+      },
+      "ConsoleOutputUpdateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "last_msg_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Msg Uid"
+          },
+          "console_output_msgs": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Console Output Msgs",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "ConsoleOutputUpdateResponse"
+      },
+      "DevicesAllowedResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "devices_allowed": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Devices Allowed"
+          },
+          "devices_allowed_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Devices Allowed Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "DevicesAllowedResponse"
+      },
+      "DevicesExistingResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "devices_existing": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Devices Existing"
+          },
+          "devices_existing_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Devices Existing Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "DevicesExistingResponse"
+      },
+      "FunctionExecuteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item"
+          },
+          "task_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "FunctionExecuteResponse"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3969,6 +4336,157 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HistoryGetResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          },
+          "plan_history_uid": {
+            "type": "string",
+            "title": "Plan History Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg",
+          "plan_history_uid"
+        ],
+        "title": "HistoryGetResponse"
+      },
+      "HistoryItem": {
+        "properties": {
+          "item_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Uid"
+          },
+          "item_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Args"
+          },
+          "kwargs": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kwargs"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "user_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Group"
+          },
+          "properties": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Properties"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HistoryItem",
+        "description": "A history item: a queue item plus the execution ``result`` block.\n\n``result`` is kept free-form in this first cut (tightening it to a typed model is a\nnoted follow-up)."
       },
       "Identity": {
         "properties": {
@@ -4001,6 +4519,405 @@
           "provider"
         ],
         "title": "Identity"
+      },
+      "ItemGetResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueueItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "ItemGetResponse"
+      },
+      "ItemResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "qsize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qsize"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueueItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "ItemResponse",
+        "description": "Single-item mutations: item_add, item_execute, item_update, item_remove, item_move."
+      },
+      "ItemsBatchResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "qsize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qsize"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QueueItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          },
+          "results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SuccessMsgResponse"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Results"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "ItemsBatchResponse",
+        "description": "Batch mutations: item_add_batch, item_remove_batch, item_move_batch.\n\n``results`` (per-item ``{success, msg}``) is only populated by item_add_batch."
+      },
+      "LockInfo": {
+        "properties": {
+          "environment": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "queue": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "time_str": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Str"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "emergency_lock_key_is_set": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emergency Lock Key Is Set"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LockInfo",
+        "description": "The structured lock-info block (``_format_lock_info``). All fields optional so the\nempty ``{}`` returned on the failure path validates as an all-``None`` instance."
+      },
+      "LockResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "lock_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LockInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lock_info_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Info Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "LockResponse",
+        "description": "lock, unlock, lock_info."
+      },
+      "LockState": {
+        "properties": {
+          "environment": {
+            "type": "boolean",
+            "title": "Environment"
+          },
+          "queue": {
+            "type": "boolean",
+            "title": "Queue"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "environment",
+          "queue"
+        ],
+        "title": "LockState"
+      },
+      "PermissionsGetResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "user_group_permissions": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Group Permissions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "PermissionsGetResponse"
+      },
+      "PlanQueueMode": {
+        "properties": {
+          "loop": {
+            "type": "boolean",
+            "title": "Loop"
+          },
+          "ignore_failures": {
+            "type": "boolean",
+            "title": "Ignore Failures"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "loop",
+          "ignore_failures"
+        ],
+        "title": "PlanQueueMode"
+      },
+      "PlansAllowedResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "plans_allowed": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Allowed"
+          },
+          "plans_allowed_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Allowed Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "PlansAllowedResponse"
+      },
+      "PlansExistingResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "plans_existing": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Existing"
+          },
+          "plans_existing_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Existing Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "PlansExistingResponse"
       },
       "Principal": {
         "properties": {
@@ -4109,6 +5026,186 @@
         ],
         "title": "PrincipalType"
       },
+      "QueueGetResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QueueItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          },
+          "running_item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueueItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plan_queue_uid": {
+            "type": "string",
+            "title": "Plan Queue Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg",
+          "plan_queue_uid"
+        ],
+        "title": "QueueGetResponse"
+      },
+      "QueueItem": {
+        "properties": {
+          "item_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Uid"
+          },
+          "item_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Type"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "args": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Args"
+          },
+          "kwargs": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kwargs"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          },
+          "user_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Group"
+          },
+          "properties": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Properties"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "QueueItem",
+        "description": "A queue or history item.\n\n``item_uid`` / ``item_type`` / ``name`` are present on a populated item but every field\nis optional so that an empty ``{}`` (returned by some handlers on failure/idle) validates.\n``args`` / ``kwargs`` / ``meta`` are user-supplied and ``properties`` is added internally;\nthey are kept free-form to avoid drift on user-arbitrary content."
+      },
+      "ReMetadataResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "re_metadata": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Re Metadata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "ReMetadataResponse"
+      },
       "RefreshToken": {
         "properties": {
           "refresh_token": {
@@ -4121,6 +5218,45 @@
           "refresh_token"
         ],
         "title": "RefreshToken"
+      },
+      "RunsResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "run_list": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Run List",
+            "default": []
+          },
+          "run_list_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run List Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "RunsResponse",
+        "description": "re_runs (and its active/open/closed views). ``run_list`` elements are free-form run dicts."
       },
       "Session": {
         "properties": {
@@ -4147,6 +5283,330 @@
         ],
         "title": "Session",
         "description": "This related to refresh tokens, which have a session uuid (\"sid\") claim.\n\nWhen the client attempts to use a refresh token, we first check\nhere to ensure that the \"session\", which is associated with a chain\nof refresh tokens that came from a single authentication, are still valid."
+      },
+      "StatusResponse": {
+        "properties": {
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "time": {
+            "type": "string",
+            "title": "Time"
+          },
+          "items_in_queue": {
+            "type": "integer",
+            "title": "Items In Queue"
+          },
+          "items_in_history": {
+            "type": "integer",
+            "title": "Items In History"
+          },
+          "running_item_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Item Uid"
+          },
+          "manager_state": {
+            "type": "string",
+            "title": "Manager State"
+          },
+          "queue_stop_pending": {
+            "type": "boolean",
+            "title": "Queue Stop Pending"
+          },
+          "queue_autostart_enabled": {
+            "type": "boolean",
+            "title": "Queue Autostart Enabled"
+          },
+          "worker_environment_exists": {
+            "type": "boolean",
+            "title": "Worker Environment Exists"
+          },
+          "worker_environment_state": {
+            "type": "string",
+            "title": "Worker Environment State"
+          },
+          "worker_background_tasks": {
+            "type": "integer",
+            "title": "Worker Background Tasks"
+          },
+          "re_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Re State"
+          },
+          "ip_kernel_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Kernel State"
+          },
+          "ip_kernel_captured": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Kernel Captured"
+          },
+          "pause_pending": {
+            "type": "boolean",
+            "title": "Pause Pending"
+          },
+          "status_uid": {
+            "type": "string",
+            "title": "Status Uid"
+          },
+          "run_list_uid": {
+            "type": "string",
+            "title": "Run List Uid"
+          },
+          "plan_queue_uid": {
+            "type": "string",
+            "title": "Plan Queue Uid"
+          },
+          "plan_history_uid": {
+            "type": "string",
+            "title": "Plan History Uid"
+          },
+          "devices_existing_uid": {
+            "type": "string",
+            "title": "Devices Existing Uid"
+          },
+          "plans_existing_uid": {
+            "type": "string",
+            "title": "Plans Existing Uid"
+          },
+          "devices_allowed_uid": {
+            "type": "string",
+            "title": "Devices Allowed Uid"
+          },
+          "plans_allowed_uid": {
+            "type": "string",
+            "title": "Plans Allowed Uid"
+          },
+          "plan_queue_mode": {
+            "$ref": "#/components/schemas/PlanQueueMode"
+          },
+          "task_results_uid": {
+            "type": "string",
+            "title": "Task Results Uid"
+          },
+          "lock_info_uid": {
+            "type": "string",
+            "title": "Lock Info Uid"
+          },
+          "lock": {
+            "$ref": "#/components/schemas/LockState"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "msg",
+          "time",
+          "items_in_queue",
+          "items_in_history",
+          "manager_state",
+          "queue_stop_pending",
+          "queue_autostart_enabled",
+          "worker_environment_exists",
+          "worker_environment_state",
+          "worker_background_tasks",
+          "pause_pending",
+          "status_uid",
+          "run_list_uid",
+          "plan_queue_uid",
+          "plan_history_uid",
+          "devices_existing_uid",
+          "plans_existing_uid",
+          "devices_allowed_uid",
+          "plans_allowed_uid",
+          "plan_queue_mode",
+          "task_results_uid",
+          "lock_info_uid",
+          "lock"
+        ],
+        "title": "StatusResponse",
+        "description": "RE Manager status snapshot (``manager.py`` ``_status_update``). All keys always present."
+      },
+      "SuccessMsgResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "SuccessMsgResponse",
+        "description": "Bare ``{success, msg}`` envelope shared by control routes that return no payload."
+      },
+      "TaskResultResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "task_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Uid"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "TaskResultResponse"
+      },
+      "TaskStatusResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "task_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Uid"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "TaskStatusResponse",
+        "description": "``task_uid``/``status`` are polymorphic: a single str when one UID was queried, or a\nlist/dict keyed by UID when several were queried."
+      },
+      "TaskUidResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          },
+          "task_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "success",
+          "msg"
+        ],
+        "title": "TaskUidResponse",
+        "description": "Routes that return a task handle: environment_update, script_upload."
       },
       "ValidationError": {
         "properties": {
