@@ -87,6 +87,8 @@ def merge(configs):
     startup_source = None
     operation_source = None
     run_engine_source = None
+    config_service_source = None
+    http_server_source = None
 
     for filepath, config in configs.items():
         if "network" in config:
@@ -134,6 +136,24 @@ def merge(configs):
                 )
             run_engine_source = filepath
             merged["run_engine"] = config["run_engine"]
+        if "config_service" in config:
+            if "config_service" in merged:
+                raise ConfigError(
+                    "'config_service' can only be specified in one file. "
+                    f"It was found in both {config_service_source} and "
+                    f"{filepath}"
+                )
+            config_service_source = filepath
+            merged["config_service"] = config["config_service"]
+        if "http_server" in config:
+            if "http_server" in merged:
+                raise ConfigError(
+                    "'http_server' can only be specified in one file. "
+                    f"It was found in both {http_server_source} and "
+                    f"{filepath}"
+                )
+            http_server_source = filepath
+            merged["http_server"] = config["http_server"]
     return merged
 
 

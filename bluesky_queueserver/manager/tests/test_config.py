@@ -409,3 +409,30 @@ def test_config_schema_02(tmpdir, option):
     else:
         config = parse_configs(config_path)
         assert config == {}
+
+
+def test_config_schema_http_server_and_config_service(tmpdir):
+    """
+    parse_configs(): the ``http_server`` (unified mode) and ``config_service``
+    (Layer 2) top-level sections must survive merge(). They are valid schema
+    sections, but merge() originally only propagated network/worker/startup/
+    operation/run_engine, so configuring them via a file was a silent no-op.
+    """
+    config_str = """
+http_server:
+  enabled: true
+  host: 0.0.0.0
+  port: 60610
+config_service:
+  enabled: true
+  url: http://configuration_service:8004
+"""
+    config_path = os.path.join(tmpdir, "config1.yml")
+    with open(config_path, "w") as f:
+        f.write(config_str)
+
+    config = parse_configs(config_path)
+    assert config == {
+        "http_server": {"enabled": True, "host": "0.0.0.0", "port": 60610},
+        "config_service": {"enabled": True, "url": "http://configuration_service:8004"},
+    }
