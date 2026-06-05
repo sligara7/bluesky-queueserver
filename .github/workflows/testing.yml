@@ -1,3 +1,8 @@
+# Unified unit tests for the merged package: a single pytest run collects both
+# the bluesky_queueserver suite and the packaged bluesky-httpserver suite
+# (see testpaths in setup.cfg). Redis is provided by the setup-redis action;
+# LDAP for the httpserver authenticator tests is provided by the openldap
+# service container below.
 name: Unit Tests
 
 on: [push, pull_request]
@@ -10,6 +15,26 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    # LDAP server for the httpserver LDAPAuthenticator tests
+    # (subprojects/bluesky-httpserver/.../test_authenticators.py connects to
+    # localhost:1389 with these users). The container starts at job start; the
+    # heavy install step below gives it ample time to be ready before tests run.
+    services:
+      # Bitnami removed the public `bitnami/openldap` images from Docker Hub in
+      # 2025 and relocated them to the `bitnamilegacy/` namespace; the old
+      # `bitnami/openldap:latest` tag no longer resolves. `bitnamilegacy` is the
+      # same image (same env vars / user bootstrap), verified to satisfy
+      # test_authenticators.py with the users below.
+      openldap:
+        image: bitnamilegacy/openldap:latest
+        ports:
+          - '1389:1389'
+          - '1636:1636'
+        env:
+          LDAP_ADMIN_USERNAME: admin
+          LDAP_ADMIN_PASSWORD: adminpassword
+          LDAP_USERS: user01,user02
+          LDAP_PASSWORDS: password1,password2
     strategy:
       matrix:
         use-ipykernel: [false, true]
@@ -62,5 +87,9 @@ jobs:
         USE_ZMQ_ENCODING: ${{ matrix.zmq-encoding }}
       run: |
         # pytest -k test_ip_kernel_func -vvv
+        # NOTE: .test_durations does not yet include the httpserver tests, so
+        # pytest-split estimates their durations and the 3 groups may be a bit
+        # uneven. Regenerate via store_test_durations.sh once the merged suite
+        # runs green in CI.
         coverage run -m pytest -vv --splits 3 --group ${{ matrix.group }}
         coverage report -m

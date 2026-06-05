@@ -2,7 +2,9 @@ version: '2'
 
 services:
   openldap:
-    image: docker.io/bitnami/openldap:latest
+    # bitnami removed the public bitnami/openldap images from Docker Hub in 2025;
+    # the same image now lives under the bitnamilegacy/ namespace.
+    image: docker.io/bitnamilegacy/openldap:latest
     ports:
       - '1389:1389'
       - '1636:1636'
