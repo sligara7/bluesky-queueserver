@@ -7,6 +7,7 @@ isort
 happi>=1.14.0
 pre-commit
 pytest
+pytest-asyncio
 pytest-xprocess
 pytest-split
 py
@@ -37,3 +38,10 @@ ophyd-async
 # and drives its ASGI lifespan via asgi-lifespan.LifespanManager.
 bluesky-configuration-service
 asgi-lifespan
+# Merged from subprojects/bluesky-httpserver/requirements-dev.txt so a single
+# dev install can run both suites. Everything else that file lists is already
+# above; only these two were unique to the httpserver tests:
+#   requests -- used directly by the httpserver test client
+#   codecov  -- coverage upload helper used by the httpserver CI
+requests
+codecov
