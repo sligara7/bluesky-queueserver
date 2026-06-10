@@ -375,6 +375,9 @@ properties:
           minimum: 0
       service_name:
         type: string
+      lock_scope:
+        type: string
+        pattern: "^(per_plan)|(environment)$"
 
   http_server:
     type: object

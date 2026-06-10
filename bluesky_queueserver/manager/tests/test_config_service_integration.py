@@ -83,7 +83,10 @@ def _payloads(*names_and_prefixes) -> Dict[str, Dict[str, Any]]:
 @pytest.fixture
 def cs_app(tmp_path: Path):
     """Fresh configuration-service FastAPI app backed by tmp_path SQLite."""
-    settings = Settings(load_strategy="empty", db_path=tmp_path / "cs.db")
+    settings = Settings(
+        load_strategy="empty",
+        database_url=f"sqlite+pysqlite:///{tmp_path / 'cs.db'}",
+    )
     return create_app(settings)
 
 
@@ -237,6 +240,45 @@ async def test_lock_and_unlock_devices(cs_client: ConfigServiceClient):
     unlock_result = await cs_client.unlock_devices(["m1", "m2"], item_id="env:abc")
     assert unlock_result["success"] is True
     assert set(unlock_result["unlocked_devices"]) == {"m1", "m2"}
+
+
+@pytest.mark.asyncio
+async def test_per_plan_lock_lifecycle_keyed_by_item_uid(
+    cs_client: ConfigServiceClient, raw_http: httpx.AsyncClient
+):
+    """Per-plan locking (lock_scope="per_plan") drives the same real endpoints
+    as env-scoped locking, but keyed by a plan's queue item_uid and over only
+    the plan's device subset. This pins the contract the manager relies on:
+    lock under item_uid → status reflects the plan → an overlapping second
+    plan conflicts (409) → unlock by item_uid frees the device."""
+    for name, prefix in [("m1", "XF:M1"), ("m2", "XF:M2")]:
+        data = _payload(name, prefix=prefix)[name]
+        await cs_client.upsert_device(data["metadata"], data["spec"])
+
+    # Plan A locks m1 under its own item_uid.
+    result = await cs_client.lock_devices(["m1"], item_id="plan-A", plan_name="count")
+    assert result["success"] is True
+    assert result["locked_devices"] == ["m1"]
+
+    # Device status reflects the owning plan.
+    status = (await raw_http.get("/api/v1/devices/m1/status")).json()
+    assert status["lock_status"] == "locked"
+    assert status["locked_by_plan"] == "count"
+    assert status["locked_by_item"] == "plan-A"
+
+    # m2 is untouched — still available for other services.
+    status_m2 = (await raw_http.get("/api/v1/devices/m2/status")).json()
+    assert status_m2["lock_status"] == "unlocked"
+
+    # Plan B trying to take m1 conflicts (409).
+    with pytest.raises(ConfigServiceConflict):
+        await cs_client.lock_devices(["m1"], item_id="plan-B", plan_name="scan")
+
+    # Plan A releases its lock by item_uid; m1 is free again.
+    unlock = await cs_client.unlock_devices(["m1"], item_id="plan-A")
+    assert unlock["success"] is True
+    status_after = (await raw_http.get("/api/v1/devices/m1/status")).json()
+    assert status_after["lock_status"] == "unlocked"
 
 
 @pytest.mark.asyncio

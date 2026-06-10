@@ -25,6 +25,7 @@ from bluesky_queueserver.manager.config_service import (
     ConfigServiceState,
     ConfigServiceUnreachable,
     build_staleness_plan,
+    extract_plan_device_names,
     fetch_staleness_plan,
     sync_devices_on_env_open,
 )
@@ -128,6 +129,82 @@ def test_settings_max_attempts_must_be_positive():
         ConfigServiceSettings.from_config_dict(
             {"enabled": True, "url": "http://cs.test", "max_attempts": 0}
         )
+
+
+def test_settings_lock_scope_defaults_to_per_plan():
+    s = ConfigServiceSettings.from_config_dict(
+        {"enabled": True, "url": "http://cs.test"}
+    )
+    assert s.lock_scope == "per_plan"
+
+
+def test_settings_lock_scope_environment_accepted():
+    s = ConfigServiceSettings.from_config_dict(
+        {"enabled": True, "url": "http://cs.test", "lock_scope": "environment"}
+    )
+    assert s.lock_scope == "environment"
+
+
+def test_settings_lock_scope_invalid_raises():
+    with pytest.raises(ValueError, match="lock_scope"):
+        ConfigServiceSettings.from_config_dict(
+            {"enabled": True, "url": "http://cs.test", "lock_scope": "per-plan"}
+        )
+
+
+# ===== extract_plan_device_names =====
+
+# Allowed-devices tree shaped like RunEngineManager._allowed_devices[group]:
+# top-level names map to dicts; sub-components live under "components".
+_ALLOWED_DEVICES = {
+    "det": {},
+    "motor": {},
+    "spot": {"components": {"img_sum": {}, "exp": {}}},
+    "hidden": {"excluded": True},
+}
+
+
+def test_extract_finds_device_in_positional_args():
+    item = {"args": [["det", "motor"], -1, 1], "kwargs": {}}
+    assert extract_plan_device_names(item, allowed_devices=_ALLOWED_DEVICES) == ["det", "motor"]
+
+
+def test_extract_finds_device_in_kwargs_and_nested_structures():
+    item = {
+        "args": [],
+        "kwargs": {"detectors": ["det"], "settings": {"primary": "motor"}},
+    }
+    assert extract_plan_device_names(item, allowed_devices=_ALLOWED_DEVICES) == ["det", "motor"]
+
+
+def test_extract_normalizes_dotted_subcomponent_to_top_level():
+    item = {"args": ["spot.img_sum"], "kwargs": {}}
+    assert extract_plan_device_names(item, allowed_devices=_ALLOWED_DEVICES) == ["spot"]
+
+
+def test_extract_ignores_non_device_strings_and_numbers():
+    item = {"args": ["not_a_device", 5, 1.5, True], "kwargs": {"num": 3}}
+    assert extract_plan_device_names(item, allowed_devices=_ALLOWED_DEVICES) == []
+
+
+def test_extract_excluded_device_is_not_locked():
+    item = {"args": ["hidden", "det"], "kwargs": {}}
+    assert extract_plan_device_names(item, allowed_devices=_ALLOWED_DEVICES) == ["det"]
+
+
+def test_extract_dedupes_and_sorts():
+    item = {"args": ["motor", "det", "motor"], "kwargs": {"also": "det"}}
+    assert extract_plan_device_names(item, allowed_devices=_ALLOWED_DEVICES) == ["det", "motor"]
+
+
+def test_extract_empty_when_no_allowed_devices():
+    item = {"args": ["det"], "kwargs": {}}
+    assert extract_plan_device_names(item, allowed_devices=None) == []
+    assert extract_plan_device_names(item, allowed_devices={}) == []
+
+
+def test_extract_handles_missing_args_kwargs_keys():
+    assert extract_plan_device_names({}, allowed_devices=_ALLOWED_DEVICES) == []
 
 
 def test_disabled_settings_reject_client_construction():
@@ -742,4 +819,165 @@ def test_overlay_handler_incremental_respects_explicit_deletes_only():
     }
     # incremental merges: m1 stays, m2 drops.
     assert stub._config_service_overlay_names == {"m1"}
+
+
+# ===== Manager per-plan lock/unlock wiring (lock_scope="per_plan") =====
+
+
+class _FakeLockClient:
+    """Records lock/unlock calls; can be configured to raise on lock."""
+
+    def __init__(self, *, lock_exc=None, unlock_exc=None):
+        self.lock_calls = []
+        self.unlock_calls = []
+        self._lock_exc = lock_exc
+        self._unlock_exc = unlock_exc
+
+    async def lock_devices(self, device_names, *, item_id, plan_name):
+        self.lock_calls.append((list(device_names), item_id, plan_name))
+        if self._lock_exc is not None:
+            raise self._lock_exc
+        return {"success": True, "locked_devices": list(device_names)}
+
+    async def unlock_devices(self, device_names, *, item_id):
+        self.unlock_calls.append((list(device_names), item_id))
+        if self._unlock_exc is not None:
+            raise self._unlock_exc
+        return {"success": True, "unlocked_devices": list(device_names)}
+
+
+def _lock_stub(client, *, lock_scope="per_plan", enabled=True):
+    """A minimal stand-in carrying just the attributes the per-plan lock
+    helpers read, with ``_get_config_service_client`` returning ``client``."""
+
+    class _Stub:
+        pass
+
+    stub = _Stub()
+    stub._config_service_settings = _settings(enabled=enabled, lock_scope=lock_scope)
+    stub._allowed_devices = {"primary": dict(_ALLOWED_DEVICES)}
+    stub._config_service_plan_locks = {}
+
+    async def _get_client():
+        return client
+
+    stub._get_config_service_client = _get_client
+    return stub
+
+
+def _plan_info(item_uid="plan-1", name="count", args=None, kwargs=None, user_group="primary"):
+    return {
+        "name": name,
+        "args": args if args is not None else [["det", "motor"]],
+        "kwargs": kwargs or {},
+        "user_group": user_group,
+        "item_uid": item_uid,
+    }
+
+
+@pytest.mark.asyncio
+async def test_lock_plan_devices_locks_extracted_subset_under_item_uid():
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    client = _FakeLockClient()
+    stub = _lock_stub(client)
+    await RunEngineManager._lock_plan_devices(stub, _plan_info(item_uid="abc", name="count"))
+
+    assert client.lock_calls == [(["det", "motor"], "abc", "count")]
+    assert stub._config_service_plan_locks == {"abc": ["det", "motor"]}
+
+
+@pytest.mark.asyncio
+async def test_lock_plan_devices_noop_in_environment_scope():
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    client = _FakeLockClient()
+    stub = _lock_stub(client, lock_scope="environment")
+    await RunEngineManager._lock_plan_devices(stub, _plan_info())
+
+    assert client.lock_calls == []
+    assert stub._config_service_plan_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_lock_plan_devices_noop_when_disabled():
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    client = _FakeLockClient()
+    stub = _lock_stub(client, enabled=False)
+    await RunEngineManager._lock_plan_devices(stub, _plan_info())
+
+    assert client.lock_calls == []
+
+
+@pytest.mark.asyncio
+async def test_lock_plan_devices_noop_when_no_devices_referenced():
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    client = _FakeLockClient()
+    stub = _lock_stub(client)
+    await RunEngineManager._lock_plan_devices(
+        stub, _plan_info(args=["not_a_device"], kwargs={"n": 3})
+    )
+
+    assert client.lock_calls == []
+    assert stub._config_service_plan_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_lock_plan_devices_propagates_failure_and_tracks_nothing():
+    # A device the plan needs is already locked → 409 → plan start must abort
+    # loudly (fail-hard), and no lock is recorded as held.
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    client = _FakeLockClient(lock_exc=ConfigServiceConflict(409, {"detail": "already_locked"}))
+    stub = _lock_stub(client)
+    with pytest.raises(ConfigServiceConflict):
+        await RunEngineManager._lock_plan_devices(stub, _plan_info(item_uid="abc"))
+
+    assert stub._config_service_plan_locks == {}
+
+
+@pytest.mark.asyncio
+async def test_unlock_plan_devices_releases_and_clears_entry():
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    client = _FakeLockClient()
+    stub = _lock_stub(client)
+    stub._config_service_plan_locks = {"abc": ["det", "motor"]}
+    await RunEngineManager._unlock_plan_devices(stub, "abc")
+
+    assert client.unlock_calls == [(["det", "motor"], "abc")]
+    assert "abc" not in stub._config_service_plan_locks
+
+
+@pytest.mark.asyncio
+async def test_unlock_plan_devices_noop_for_unknown_item():
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    client = _FakeLockClient()
+    stub = _lock_stub(client)
+    await RunEngineManager._unlock_plan_devices(stub, "never-locked")
+
+    assert client.unlock_calls == []
+
+
+@pytest.mark.asyncio
+async def test_unlock_plan_devices_suppresses_errors_when_asked():
+    # Env-close sweep must not be wedged by a dead config-service.
+    from bluesky_queueserver.manager.manager import RunEngineManager
+
+    client = _FakeLockClient(unlock_exc=ConfigServiceUnreachable("down"))
+    stub = _lock_stub(client)
+    stub._config_service_plan_locks = {"abc": ["det"]}
+    # Does not raise; entry cleared so we don't retry a doomed unlock forever.
+    await RunEngineManager._unlock_plan_devices(stub, "abc", suppress_errors=True)
+    assert "abc" not in stub._config_service_plan_locks
+
+    # Without suppression the failure propagates.
+    client2 = _FakeLockClient(unlock_exc=ConfigServiceUnreachable("down"))
+    stub2 = _lock_stub(client2)
+    stub2._config_service_plan_locks = {"abc": ["det"]}
+    with pytest.raises(ConfigServiceUnreachable):
+        await RunEngineManager._unlock_plan_devices(stub2, "abc")
 

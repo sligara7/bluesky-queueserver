@@ -31,6 +31,15 @@ DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_BACKOFF_MS = (200, 400)
 DEFAULT_SERVICE_NAME = "bluesky-queueserver"
 
+# Device-lock scope:
+#   "per_plan"    — lock only the devices a plan uses, for that plan's duration,
+#                   keyed by the plan's queue item_uid. Idle devices stay free
+#                   for other services (e.g. direct-control). This is the default.
+#   "environment" — legacy behavior: lock every device on env-open, unlock all
+#                   on env-close, under a single env-scoped item_id.
+DEFAULT_LOCK_SCOPE = "per_plan"
+_VALID_LOCK_SCOPES = frozenset({"per_plan", "environment"})
+
 _RETRYABLE_HTTP_STATUS = frozenset({502, 503, 504})
 
 
@@ -87,6 +96,7 @@ class ConfigServiceSettings:
     max_attempts: int = DEFAULT_MAX_ATTEMPTS
     backoff_ms: Tuple[int, ...] = DEFAULT_BACKOFF_MS
     service_name: str = DEFAULT_SERVICE_NAME
+    lock_scope: str = DEFAULT_LOCK_SCOPE
 
     @classmethod
     def from_config_dict(cls, section: Optional[Dict[str, Any]]) -> "ConfigServiceSettings":
@@ -120,6 +130,13 @@ class ConfigServiceSettings:
 
         service_name = str(section.get("service_name", DEFAULT_SERVICE_NAME))
 
+        lock_scope = str(section.get("lock_scope", DEFAULT_LOCK_SCOPE))
+        if lock_scope not in _VALID_LOCK_SCOPES:
+            raise ValueError(
+                f"config_service.lock_scope must be one of "
+                f"{sorted(_VALID_LOCK_SCOPES)} (got {lock_scope!r})"
+            )
+
         return cls(
             enabled=True,
             url=url,
@@ -127,7 +144,59 @@ class ConfigServiceSettings:
             max_attempts=max_attempts,
             backoff_ms=backoff_ms,
             service_name=service_name,
+            lock_scope=lock_scope,
         )
+
+
+def extract_plan_device_names(item: Dict[str, Any], *, allowed_devices: Optional[Dict[str, Any]]) -> List[str]:
+    """Best-effort static extraction of the device names a queue item uses.
+
+    Walks the item's ``args`` and ``kwargs`` recursively and collects every
+    string that names a device in the user-group's allowed-devices tree.
+    Dotted sub-component names (``det.chan1``) are normalized to their
+    top-level registry name (``det``), since that is the granularity at which
+    configuration-service tracks locks.
+
+    This is intentionally an *over-approximation*: a string that merely happens
+    to match a device name is locked even if the plan would not move it. The
+    failure mode is a harmless extra lock that is released when the plan
+    finishes — never a missed device. Precise, execution-time device detection
+    for dynamic/string-named plans is handled separately by the worker-side
+    just-in-time hook (a later phase).
+
+    Parameters
+    ----------
+    item: dict
+        Queue item. Only ``args`` (list) and ``kwargs`` (dict) are inspected.
+    allowed_devices: dict or None
+        The allowed-devices tree for the item's user group
+        (``RunEngineManager._allowed_devices[user_group]``). ``None``/empty
+        yields an empty result.
+
+    Returns
+    -------
+    list of str
+        Sorted, de-duplicated top-level device names.
+    """
+    from .profile_ops import _is_object_name_in_list
+
+    allowed_devices = allowed_devices or {}
+    found: set = set()
+
+    def _walk(value: Any) -> None:
+        if isinstance(value, str):
+            if _is_object_name_in_list(value, allowed_objects=allowed_devices):
+                found.add(value.split(".")[0])
+        elif isinstance(value, dict):
+            for v in value.values():
+                _walk(v)
+        elif isinstance(value, (list, tuple, set)):
+            for v in value:
+                _walk(v)
+
+    _walk(item.get("args", []) or [])
+    _walk(item.get("kwargs", {}) or {})
+    return sorted(found)
 
 
 class ConfigServiceClient:

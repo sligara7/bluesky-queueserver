@@ -385,6 +385,12 @@ class RunEngineManager(Process):
         # Stable for the manager's lifetime; used as item_id on every lock/unlock.
         self._config_service_lock_item_id = f"env:{_generate_uid()}"
         self._config_service_locked_devices: list = []
+        # Per-plan device locks (lock_scope="per_plan"): maps a plan's queue
+        # item_uid -> the list of device names locked for that plan. A plan's
+        # entry is added just before it starts and removed when it reaches a
+        # terminal state (a paused plan keeps its lock). Used instead of the
+        # env-wide lock above when lock_scope is "per_plan".
+        self._config_service_plan_locks: dict = {}
         # Registry snapshot (``{name: spec}``) fetched at the start of env-open.
         # ``None`` means "not fetched this env-cycle" and is distinct from the
         # known-empty ``{}`` case — so a disabled/errored prefetch does not
@@ -995,6 +1001,12 @@ class RunEngineManager(Process):
             ignore_failures = self._plan_queue.plan_queue_mode["ignore_failures"]
             continue_failed = (plan_state == "failed") and ignore_failures
 
+            # Capture the running plan's item_uid before the queue mutates it,
+            # so per-plan locks (lock_scope="per_plan") can be released on
+            # terminal states below. A *paused* plan keeps its lock.
+            _running_item = self._plan_queue.get_running_item_info()
+            _running_item_uid = _running_item.get("item_uid") if _running_item else None
+
             if plan_state in ("completed", "unknown") or continue_failed:
                 # Check if the plan was running in the 'immediate_execution' mode.
                 item = self._plan_queue.get_running_item_info()
@@ -1007,12 +1019,14 @@ class RunEngineManager(Process):
                 await self._plan_queue.set_processed_item_as_completed(
                     exit_status=plan_state, run_uids=uids, scan_ids=scan_ids, err_msg=err_msg, err_tb=err_tb
                 )
+                await self._unlock_plan_devices(_running_item_uid, suppress_errors=True)
                 await self._start_plan_task(stop_queue=stop_queue or bool(immediate_execution))
             elif plan_state in ("failed", "stopped", "aborted", "halted"):
                 # Paused plan was stopped/aborted/halted
                 await self._plan_queue.set_processed_item_as_stopped(
                     exit_status=plan_state, run_uids=uids, scan_ids=scan_ids, err_msg=err_msg, err_tb=err_tb
                 )
+                await self._unlock_plan_devices(_running_item_uid, suppress_errors=True)
                 self._loop.create_task(self._set_manager_state(MState.IDLE, autostart_disable=True))
             elif plan_state == "paused":
                 # The plan was paused (nothing should be done).
@@ -1144,7 +1158,11 @@ class RunEngineManager(Process):
             device_data=self._config_service_device_data,
             prefetched_info=self._config_service_prefetched_info,
         )
-        if not self._config_service_locked_devices and device_names:
+        if (
+            self._config_service_settings.lock_scope == "environment"
+            and not self._config_service_locked_devices
+            and device_names
+        ):
             await client.lock_devices(
                 device_names,
                 item_id=self._config_service_lock_item_id,
@@ -1152,7 +1170,7 @@ class RunEngineManager(Process):
             )
             self._config_service_locked_devices = list(device_names)
             logger.info(
-                "config-service locked %d device(s) under item_id=%s",
+                "config-service locked %d device(s) under item_id=%s (env scope)",
                 len(device_names), self._config_service_lock_item_id,
             )
         self._config_service_state = state
@@ -1211,24 +1229,92 @@ class RunEngineManager(Process):
         """
         if not self._config_service_settings.enabled:
             return
+        # Release the env-scoped lock (lock_scope="environment") if held...
         devices = self._config_service_locked_devices
+        if devices:
+            try:
+                client = await self._get_config_service_client()
+                await client.unlock_devices(
+                    devices, item_id=self._config_service_lock_item_id
+                )
+            except Exception:
+                if not suppress_errors:
+                    raise
+                logger.exception(
+                    "config-service unlock failed during env-destroy; "
+                    "locks for item_id=%s may persist until config-service restart",
+                    self._config_service_lock_item_id,
+                )
+            self._config_service_locked_devices = []
+
+        # ...and sweep any per-plan locks still held (lock_scope="per_plan").
+        # Normally a plan releases its own lock on finish; this covers a plan
+        # interrupted by env-close (e.g. paused, then env destroyed).
+        for item_uid in list(self._config_service_plan_locks):
+            await self._unlock_plan_devices(item_uid, suppress_errors=suppress_errors)
+
+    async def _lock_plan_devices(self, plan_info: dict) -> None:
+        """Lock the devices a plan uses (lock_scope="per_plan").
+
+        No-op when config-service is disabled or lock_scope is "environment".
+        The lock is keyed by the plan's queue ``item_uid`` so it is owned by
+        that specific plan and released independently of any other plan's lock.
+
+        Raises on failure so plan start aborts loudly (see
+        feedback_no_silent_fallbacks): a device this plan needs must not be
+        left writable by another service.
+        """
+        if not self._config_service_settings.enabled:
+            return
+        if self._config_service_settings.lock_scope != "per_plan":
+            return
+
+        from .config_service import extract_plan_device_names
+
+        user_group = plan_info.get("user_group")
+        allowed_devices = self._allowed_devices.get(user_group) if self._allowed_devices else None
+        device_names = extract_plan_device_names(plan_info, allowed_devices=allowed_devices)
+        if not device_names:
+            return
+
+        item_uid = plan_info["item_uid"]
+        client = await self._get_config_service_client()
+        await client.lock_devices(
+            device_names,
+            item_id=item_uid,
+            plan_name=plan_info.get("name", ""),
+        )
+        self._config_service_plan_locks[item_uid] = list(device_names)
+        logger.info(
+            "config-service locked %d device(s) for plan item_uid=%s (per-plan scope)",
+            len(device_names), item_uid,
+        )
+
+    async def _unlock_plan_devices(self, item_uid: str, *, suppress_errors: bool = False) -> None:
+        """Release the per-plan lock held for ``item_uid`` (lock_scope="per_plan").
+
+        No-op when config-service is disabled or no lock is tracked for the
+        item. ``suppress_errors`` (used from the env-close sweep) downgrades
+        failures to ERROR logs so a dead config-service cannot wedge env-close.
+        """
+        if not self._config_service_settings.enabled:
+            return
+        devices = self._config_service_plan_locks.get(item_uid)
         if not devices:
             return
 
         try:
             client = await self._get_config_service_client()
-            await client.unlock_devices(
-                devices, item_id=self._config_service_lock_item_id
-            )
+            await client.unlock_devices(devices, item_id=item_uid)
         except Exception:
             if not suppress_errors:
                 raise
             logger.exception(
-                "config-service unlock failed during env-destroy; "
-                "locks for item_id=%s may persist until config-service restart",
-                self._config_service_lock_item_id,
+                "config-service unlock failed for plan item_uid=%s; "
+                "locks may persist until config-service restart",
+                item_uid,
             )
-        self._config_service_locked_devices = []
+        self._config_service_plan_locks.pop(item_uid, None)
 
     async def _load_task_results_from_worker(self):
         """
@@ -1429,8 +1515,28 @@ class RunEngineManager(Process):
                 # TODO: Decide if we really want to have metadata in the log
                 logger.info("Starting the plan:\n%s.", ppfl(plan_info))
 
+                # Per-plan device lock (lock_scope="per_plan"). Acquire BEFORE
+                # the plan can touch any device, so no other service can caput a
+                # device this plan needs during the start window. No-op when
+                # config-service is disabled or in "environment" scope. On
+                # failure, abort the start (item stays in the queue) — a needed
+                # device must not be left writable by another service.
+                try:
+                    await self._lock_plan_devices(plan_info)
+                except (ConfigServiceError, CommTimeoutError, RuntimeError) as ex:
+                    await self._plan_queue.set_processed_item_as_stopped(
+                        exit_status="failed", run_uids=[], scan_ids=[], err_msg=str(ex), err_tb=""
+                    )
+                    self._manager_state = MState.IDLE
+                    err_msg = f"config-service per-plan lock failed: {ex}"
+                    logger.error(err_msg)
+                    self._status_update()
+                    return False, err_msg
+
                 success, err_msg = await self._worker_command_run_plan(plan_info)
                 if not success:
+                    # Plan never started — release the lock we just acquired.
+                    await self._unlock_plan_devices(item_uid, suppress_errors=True)
                     await self._plan_queue.set_processed_item_as_stopped(
                         exit_status="failed", run_uids=[], scan_ids=[], err_msg=err_msg, err_tb=""
                     )
