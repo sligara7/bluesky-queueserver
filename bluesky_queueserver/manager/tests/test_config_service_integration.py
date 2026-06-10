@@ -83,7 +83,10 @@ def _payloads(*names_and_prefixes) -> Dict[str, Dict[str, Any]]:
 @pytest.fixture
 def cs_app(tmp_path: Path):
     """Fresh configuration-service FastAPI app backed by tmp_path SQLite."""
-    settings = Settings(load_strategy="empty", db_path=tmp_path / "cs.db")
+    settings = Settings(
+        load_strategy="empty",
+        database_url=f"sqlite+pysqlite:///{tmp_path / 'cs.db'}",
+    )
     return create_app(settings)
 
 
